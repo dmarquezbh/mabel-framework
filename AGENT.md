@@ -1,49 +1,95 @@
-# 🦋 Mabel Framework - AI Development Guide
+# Mabel Framework - AI Development Guide
 
-This document provides essential context and instructions for AI agents (Copilot, Cursor, Antigravity, etc.) to assist in developing and maintaining projects built with the Mabel Framework.
+This document provides context for AI agents assisting with Mabel Framework development.
 
-## 🚀 Overview
-**Mabel** is a lightweight, cross-platform framework designed to wrap Web UIs (like Blazor WASM, React, or Vue) into high-performance native applications for **iOS, Android, and Desktop**—all controllable from a **Linux** environment.
+## Architecture
 
-## 🛠️ Key Tools
-- **xtool**: The core tool for iOS development on Linux (build, sign, deploy).
-- **dotnet**: Used for Blazor WebAssembly UI development.
-- **mabel.sh**: The CLI for scaffolding and system management.
+Mabel is a cross-platform framework: Blazor components compiled to WASM/WASI, rendered via native canvas. **No WebView.**
 
-## 📁 Project Structure
-A standard Mabel project follows this layout:
-- `blazor_app/`: The source code for the Web UI (C# / Blazor WASM).
-- `ios_app/`: The native Swift wrapper (initialized via `xtool`).
-  - `Sources/ios_app/ContentView.swift`: Main entry point and Native Bridge configuration.
-  - `Sources/ios_app/Resources/`: Contains the synchronized assets from the Web UI.
-- `mabel-sync.sh`: Automation script to publish the web app and update native assets.
-
-## 🔄 Development Lifecycle
-1. **Modify UI**: Edit components in `blazor_app/`.
-2. **Synchronize**: Run `./mabel-sync.sh` in the project root. This publishes the Blazor app and updates the `ios_app/Resources` directory.
-3. **Deploy**: Navigate to `ios_app/` and run `xtool dev` to deploy to a physical device.
-
-## 🌉 Native Bridge (JS ↔ Swift)
-### Sending from Web to Native
-In JavaScript/C#, use the injected `window.callNative` function:
-```javascript
-window.callNative("Hello from Mabel UI!");
+```
+Blazor (.razor) -> WASM/WASI -> Native Host -> Canvas Rendering
 ```
 
-### Handling in Swift
-The `MabelBridge` class in `ContentView.swift` handles incoming messages:
-```swift
-class MabelBridge: NSObject, WKScriptMessageHandler {
-    func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
-        if msg.name == "iosNative", let body = msg.body as? String {
-            // Process message
-            NSLog("🦋 [MABEL-BRIDGE] \(body)")
-        }
-    }
-}
+### Key Principles
+- **Vertical Slice Architecture** — each feature is self-contained under `Features/`
+- **Hexagonal/Ports-Adapters** — all I/O behind interfaces (`IShellExecutor`, `IFileSystem`)
+- **Only 2 app projects** — `Mabel.Core` (everything) and `Mabel.Cli` (thin entrypoint)
+- **.NET 10** everywhere, `net10.0` TFM
+- **xunit v3** (3.2.2) for tests — NOT xunit v2
+
+### Solution Structure (6 projects)
+```
+Mabel.sln
+  src/Mabel.Wasi.Protocol/   # RenderOp, RenderCommand, InputEvent, WasiContract
+  src/Mabel.Renderer/        # ICanvas, MabelRenderer
+  src/Mabel.Core/             # Domain, Ports, Infrastructure, Features
+  src/Mabel.Cli/              # CLI entrypoint (AOT-enabled)
+  tests/Mabel.Core.Tests/
+  tests/Mabel.Renderer.Tests/
 ```
 
-## 📝 Important Notes for AI
-- **HMR**: For Hot Module Replacement, set `devMode = true` in `ContentView.swift` to point to the local dev server IP.
-- **Asset Loading**: Assets are served via the `app://` scheme to bypass CORS and improve performance.
-- **Deployment**: Always remind the user that `xtool` requires a physical device and proper Apple ID authentication (`mabel` option 1).
+Plus `src/Mabel.Host.Ios/` (Swift Package, not in .sln).
+
+## Development Environment
+
+- **.NET 10 SDK** — requires `export PATH="$HOME/.dotnet:$PATH"`
+- Developed and tested on **Linux / WSL2**
+
+## Build & Test
+
+```bash
+export PATH="$HOME/.dotnet:$PATH"
+dotnet build              # Must succeed with 0 errors, 0 warnings
+dotnet test               # Must pass all 21 tests (16 renderer + 5 core)
+```
+
+## Code Conventions
+
+### Namespaces
+- `Mabel.Wasi.Protocol` — protocol types
+- `Mabel.Renderer` — ICanvas, MabelRenderer
+- `Mabel.Core.Domain` — Platform, ToolRequirement
+- `Mabel.Core.Ports` — IShellExecutor, IFileSystem
+- `Mabel.Core.Infrastructure` — BashShellExecutor, LocalFileSystem
+- `Mabel.Core.Features.<Name>` — each feature in its own namespace
+
+### Testing
+- Fakes, not mocks (`FakeShellExecutor`, `FakeFileSystem`, `FakeCanvas`)
+- Tests use `using Xunit;` explicitly (ImplicitUsings does not include it)
+- xunit v3 `[Fact]` attribute
+
+### Security
+- `BashShellExecutor` uses single-quote escaping for shell args
+- `MabelDevServer` uses `System.Text.Json` for JSON serialization (no string interpolation)
+- Thread safety via `Interlocked` and `lock` in `MabelDevServer`
+
+## WASI Protocol
+
+Color format: RGBA packed as `uint32` — `0xRRGGBBAA`.
+
+`RenderCommand.Text` is `string?`. For binary WASI transport, this needs separate serialization (pointer + length). Current design is for in-process use.
+
+The `ICanvas` interface includes `SaveState()`/`RestoreState()` to prevent transform leaks across frames. `BeginFrame` saves state, `EndFrame` restores it.
+
+## CLI
+
+The CLI at `src/Mabel.Cli/Program.cs` uses top-level statements. Commands: `doctor`, `setup`, `create`, `deploy`, `dev`, `devices`, `usb-help`, `version`, `help`.
+
+`GetPositional()` skips flags and their values when finding positional arguments.
+
+All `PlatformExtensions.Parse()` calls are wrapped in try/catch.
+
+## Files Changed in Code Review
+
+These files had fixes applied from a comprehensive 3-agent code review:
+
+1. `BashShellExecutor.cs` — command injection fix, deadlock fix, null check
+2. `Platform.cs` — RemoveEmptyEntries, composite Label
+3. `ToolRequirement.cs` — added adb for Android
+4. `DiagnoseEnvironment.cs` — home parameter, try/catch WSL check
+5. `MabelDevServer.cs` — thread safety (Interlocked), resource disposal, JSON injection, graceful WebSocket close, concurrent rebuild prevention
+6. `MabelRenderer.cs` — SaveState/RestoreState on BeginFrame/EndFrame, Image op support, default case
+7. `ICanvas.cs` — added DrawImage, SaveState, RestoreState, color format docs
+8. `Protocol.cs` — comprehensive field documentation, color format docs, string field note
+9. `Program.cs` — GetPositional skips flags, PlatformExtensions.Parse error handling
+10. `MabelCanvasView.swift` — saveGState/restoreGState around BeginFrame/EndFrame, translate fix

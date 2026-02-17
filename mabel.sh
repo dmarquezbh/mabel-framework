@@ -4,7 +4,8 @@
 # The Cross-Platform .NET Web Wrapper for iOS, Android & Desktop
 # ==============================================================================
 
-export PATH="/home/user/bin:/home/user/swift/usr/bin:$PATH"
+export PATH="$HOME/bin:$HOME/.dotnet:$HOME/.dotnet/tools:$HOME/swift/usr/bin:$PATH"
+export DOTNET_ROOT="$HOME/.dotnet"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
