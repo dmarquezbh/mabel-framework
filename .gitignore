@@ -1,0 +1,43 @@
+# .NET build
+bin/
+obj/
+publish/
+
+# User secrets
+*.user
+*.suo
+.vs/
+
+# Rider / VS Code
+.idea/
+*.DotSettings.user
+
+# macOS
+.DS_Store
+
+# OS
+Thumbs.db
+desktop.ini
+
+# .NET tool artifacts
+*.nupkg
+*.snupkg
+
+# Swift build
+.build/
+.swiftpm/
+
+# Secrets & credentials (preventive)
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+*.key
+appsettings.Development.json
+appsettings.*.json
+!appsettings.json
+credentials.json
+
+# Misc
+*.log
