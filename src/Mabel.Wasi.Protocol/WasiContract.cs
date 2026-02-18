@@ -25,10 +25,34 @@ public static class WasiContract
     // Host imports (module name)
     public const string HostModule = "mabel";
 
-    // Host import functions
+    // Host import functions — Primitives
     public const string DrawRect    = "draw_rect";
     public const string DrawText    = "draw_text";
     public const string DrawCircle  = "draw_circle";
+    public const string DrawLine    = "draw_line";
+    public const string DrawImage   = "draw_image";
     public const string MeasureText = "measure_text";
-    public const string Log         = "log";
+
+    // Host import functions — Effects (Glass / modern UI)
+    public const string SetShadow       = "set_shadow";
+    public const string ClearShadow     = "clear_shadow";
+    public const string SetBlur         = "set_blur";
+    public const string ClearBlur       = "clear_blur";
+    public const string SetLinearGrad   = "set_linear_gradient";
+    public const string SetRadialGrad   = "set_radial_gradient";
+    public const string ClearGradient   = "clear_gradient";
+    public const string DrawStrokeRect  = "draw_stroke_rect";
+    public const string DrawPath        = "draw_path";
+
+    // Host import functions — State
+    public const string PushClip    = "push_clip";
+    public const string PopClip     = "pop_clip";
+    public const string PushOpacity = "push_opacity";
+    public const string PopOpacity  = "pop_opacity";
+    public const string TranslateOp = "translate";
+    public const string ScaleOp     = "scale";
+    public const string RotateOp    = "rotate";
+
+    // Host import functions — Utility
+    public const string Log = "log";
 }

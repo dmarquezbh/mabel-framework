@@ -249,4 +249,176 @@ public class MabelRendererTests
 
         Assert.Empty(canvas.Calls);
     }
+
+    // ========================================================================
+    // Glass / Effects operations
+    // ========================================================================
+
+    [Fact]
+    public void Shadow_SetsShadowOnCanvas()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([new RenderCommand(RenderOp.Shadow, 4, 4, 0, 0, 0x00000080, Radius: 10)]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("SetShadow", call.Method);
+        Assert.Equal(4f, call.X);
+        Assert.Equal(4f, call.Y);
+        Assert.Equal(10f, call.W); // blurRadius mapped to W in FakeCanvas DrawCall
+        Assert.Equal(0x00000080u, call.Color);
+    }
+
+    [Fact]
+    public void Blur_SetsBlurOnCanvas()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([new RenderCommand(RenderOp.Blur, 0, 0, 0, 0, 0, Radius: 20)]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("SetBlur", call.Method);
+        Assert.Equal(20f, call.X); // radius mapped to X in FakeCanvas
+    }
+
+    [Fact]
+    public void LinearGrad_SetsGradientOnCanvas()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([new RenderCommand(RenderOp.LinearGrad, 0, 0, 100, 200, 0xFF0000FF, Color2: 0x00FF00FF)]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("SetLinearGradient", call.Method);
+        Assert.Equal(0f, call.X);
+        Assert.Equal(0f, call.Y);
+        Assert.Equal(100f, call.W);
+        Assert.Equal(200f, call.H);
+        Assert.Equal(0xFF0000FFu, call.Color);
+    }
+
+    [Fact]
+    public void RadialGrad_SetsRadialGradientOnCanvas()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([new RenderCommand(RenderOp.RadialGrad, 50, 50, 0, 0, 0xFFAAAAFF, Radius: 80, Color2: 0x00000000)]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("SetRadialGradient", call.Method);
+        Assert.Equal(50f, call.X);
+        Assert.Equal(50f, call.Y);
+        Assert.Equal(80f, call.W); // radius mapped to W in FakeCanvas
+        Assert.Equal(0xFFAAAAFFu, call.Color);
+    }
+
+    [Fact]
+    public void Stroke_DrawsStrokeRectOnCanvas()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([new RenderCommand(RenderOp.Stroke, 10, 20, 200, 100, 0xFF00FF00, Radius: 8, FontSize: 2)]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("DrawStrokeRect", call.Method);
+        Assert.Equal(10f, call.X);
+        Assert.Equal(20f, call.Y);
+        Assert.Equal(200f, call.W);
+        Assert.Equal(100f, call.H);
+        Assert.Equal(8f, call.Radius);
+        Assert.Equal(2f, call.FontSize); // strokeWidth reused from FontSize
+        Assert.Equal(0xFF00FF00u, call.Color);
+    }
+
+    [Fact]
+    public void Path_DrawsPathOnCanvas()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([new RenderCommand(RenderOp.Path, 0, 0, 0, 0, 0xFF0000FF, Text: "M 10 10 L 50 50 Z")]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("DrawPath", call.Method);
+        Assert.Equal("M 10 10 L 50 50 Z", call.Text);
+        Assert.Equal(0xFF0000FFu, call.Color);
+    }
+
+    [Fact]
+    public void Path_NullText_DrawsEmptyPath()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([new RenderCommand(RenderOp.Path, 0, 0, 0, 0, 0xFFFFFFFF, Text: null)]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("DrawPath", call.Method);
+        Assert.Equal("", call.Text);
+    }
+
+    [Fact]
+    public void Scale_ScalesCanvas()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([new RenderCommand(RenderOp.Scale, 2.0f, 0.5f, 0, 0, 0)]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("Scale", call.Method);
+        Assert.Equal(2.0f, call.X);
+        Assert.Equal(0.5f, call.Y);
+    }
+
+    [Fact]
+    public void Rotate_RotatesCanvas()
+    {
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        float angle = 1.5708f; // ~90 degrees in radians
+        renderer.Render([new RenderCommand(RenderOp.Rotate, angle, 0, 0, 0, 0)]);
+
+        var call = Assert.Single(canvas.Calls);
+        Assert.Equal("Rotate", call.Method);
+        Assert.Equal(angle, call.X);
+    }
+
+    [Fact]
+    public void GlassFrame_ShadowThenBlurThenGradientThenShape()
+    {
+        // Simulates a typical Glass UI card: shadow + blur + gradient fill + rounded rect
+        var canvas = new FakeCanvas();
+        var renderer = new MabelRenderer(canvas);
+
+        renderer.Render([
+            new RenderCommand(RenderOp.BeginFrame, 0, 0, 0, 0, 0xFF000000),
+            new RenderCommand(RenderOp.Shadow, 0, 4, 0, 0, 0x00000040, Radius: 16),
+            new RenderCommand(RenderOp.Blur, 0, 0, 0, 0, 0, Radius: 30),
+            new RenderCommand(RenderOp.LinearGrad, 0, 0, 0, 200, 0xFFFFFF40, Color2: 0xFFFFFF10),
+            new RenderCommand(RenderOp.RoundRect, 20, 100, 335, 200, 0xFFFFFF20, Radius: 24),
+            new RenderCommand(RenderOp.Stroke, 20, 100, 335, 200, 0xFFFFFF30, Radius: 24, FontSize: 0.5f),
+            new RenderCommand(RenderOp.Text, 40, 140, 0, 0, 0xFFFFFFFF, Text: "Glass Card", FontSize: 28),
+            new RenderCommand(RenderOp.EndFrame, 0, 0, 0, 0, 0),
+        ]);
+
+        // SaveState + Clear + SetShadow + SetBlur + SetLinearGradient + DrawRoundRect
+        // + DrawStrokeRect + DrawText + RestoreState = 9 calls
+        Assert.Equal(9, canvas.Calls.Count);
+        Assert.Equal("SaveState", canvas.Calls[0].Method);
+        Assert.Equal("Clear", canvas.Calls[1].Method);
+        Assert.Equal("SetShadow", canvas.Calls[2].Method);
+        Assert.Equal("SetBlur", canvas.Calls[3].Method);
+        Assert.Equal("SetLinearGradient", canvas.Calls[4].Method);
+        Assert.Equal("DrawRoundRect", canvas.Calls[5].Method);
+        Assert.Equal("DrawStrokeRect", canvas.Calls[6].Method);
+        Assert.Equal("DrawText", canvas.Calls[7].Method);
+        Assert.Equal("RestoreState", canvas.Calls[8].Method);
+    }
 }

@@ -69,6 +69,40 @@ public sealed class MabelRenderer
                     _canvas.Translate(cmd.X, cmd.Y);
                     break;
 
+                case RenderOp.Scale:
+                    _canvas.Scale(cmd.X, cmd.Y);
+                    break;
+
+                case RenderOp.Rotate:
+                    _canvas.Rotate(cmd.X); // X = angle in radians
+                    break;
+
+                // -- Effects (Glass / modern UI) --
+
+                case RenderOp.Shadow:
+                    _canvas.SetShadow(cmd.X, cmd.Y, cmd.Radius, cmd.Color);
+                    break;
+
+                case RenderOp.Blur:
+                    _canvas.SetBlur(cmd.Radius);
+                    break;
+
+                case RenderOp.LinearGrad:
+                    _canvas.SetLinearGradient(cmd.X, cmd.Y, cmd.W, cmd.H, cmd.Color, cmd.Color2);
+                    break;
+
+                case RenderOp.RadialGrad:
+                    _canvas.SetRadialGradient(cmd.X, cmd.Y, cmd.Radius, cmd.Color, cmd.Color2);
+                    break;
+
+                case RenderOp.Stroke:
+                    _canvas.DrawStrokeRect(cmd.X, cmd.Y, cmd.W, cmd.H, cmd.Radius, cmd.FontSize, cmd.Color);
+                    break;
+
+                case RenderOp.Path:
+                    _canvas.DrawPath(cmd.Text ?? "", cmd.Color);
+                    break;
+
                 case RenderOp.EndFrame:
                     // Restore the state saved at BeginFrame, undoing all
                     // Translate/clip/opacity changes from this frame.

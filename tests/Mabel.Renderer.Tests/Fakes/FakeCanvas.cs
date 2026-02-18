@@ -41,6 +41,37 @@ public sealed class FakeCanvas : ICanvas
     public void DrawImage(string imageId, float x, float y, float w, float h)
         => _calls.Add(new("DrawImage", x, y, w, h, 0, Text: imageId));
 
+    // -- Effects (Glass / modern UI) --
+
+    public void SetShadow(float offsetX, float offsetY, float blurRadius, uint color)
+        => _calls.Add(new("SetShadow", offsetX, offsetY, blurRadius, 0, color));
+
+    public void ClearShadow()
+        => _calls.Add(new("ClearShadow", 0, 0, 0, 0, 0));
+
+    public void SetBlur(float radius)
+        => _calls.Add(new("SetBlur", radius, 0, 0, 0, 0));
+
+    public void ClearBlur()
+        => _calls.Add(new("ClearBlur", 0, 0, 0, 0, 0));
+
+    public void SetLinearGradient(float x1, float y1, float x2, float y2, uint startColor, uint endColor)
+        => _calls.Add(new("SetLinearGradient", x1, y1, x2, y2, startColor));
+
+    public void SetRadialGradient(float cx, float cy, float radius, uint centerColor, uint edgeColor)
+        => _calls.Add(new("SetRadialGradient", cx, cy, radius, 0, centerColor));
+
+    public void ClearGradient()
+        => _calls.Add(new("ClearGradient", 0, 0, 0, 0, 0));
+
+    public void DrawStrokeRect(float x, float y, float w, float h, float cornerRadius, float strokeWidth, uint color)
+        => _calls.Add(new("DrawStrokeRect", x, y, w, h, color, Radius: cornerRadius, FontSize: strokeWidth));
+
+    public void DrawPath(string svgPathData, uint color)
+        => _calls.Add(new("DrawPath", 0, 0, 0, 0, color, Text: svgPathData));
+
+    // -- Measurement --
+
     public float MeasureText(string text, float fontSize)
         => text.Length * fontSize * 0.6f; // Approximate for testing
 
@@ -74,6 +105,12 @@ public sealed class FakeCanvas : ICanvas
         TranslateY += dy;
         _calls.Add(new("Translate", dx, dy, 0, 0, 0));
     }
+
+    public void Scale(float sx, float sy)
+        => _calls.Add(new("Scale", sx, sy, 0, 0, 0));
+
+    public void Rotate(float angleRadians)
+        => _calls.Add(new("Rotate", angleRadians, 0, 0, 0, 0));
 
     public void Clear(uint color)
     {
