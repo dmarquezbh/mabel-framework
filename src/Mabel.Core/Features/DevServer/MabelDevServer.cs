@@ -7,17 +7,17 @@ using Mabel.Core.Ports;
 namespace Mabel.Core.Features.DevServer;
 
 /// <summary>
-/// Servidor HTTP + WebSocket embutido para hot reload.
+/// Mabel Live — embedded HTTP + WebSocket server for hot reload.
 ///
 /// Endpoints:
-///   GET /mabel.wasm         -> serve o modulo WASM compilado
-///   GET /status             -> JSON com versao e timestamp do ultimo build
-///   WebSocket /ws           -> notifica "reload" quando o WASM e recompilado
+///   GET /mabel.wasm         -> serves the compiled WASM module
+///   GET /status             -> JSON with build version and timestamp
+///   WebSocket /ws           -> notifies "reload" when WASM is recompiled
 ///
-/// O app Mabel Go no celular:
-///   1. Conecta via WebSocket em ws://<ip>:5555/ws
-///   2. Baixa o .wasm inicial de http://<ip>:5555/mabel.wasm
-///   3. Ao receber "reload", baixa novamente e re-renderiza
+/// The Mabel app on the device:
+///   1. Connects via WebSocket to ws://&lt;ip&gt;:5555/ws
+///   2. Downloads initial .wasm from http://&lt;ip&gt;:5555/mabel.wasm
+///   3. On receiving "reload", downloads again and re-renders
 /// </summary>
 public sealed class MabelDevServer : IDisposable
 {
@@ -369,8 +369,8 @@ public sealed class MabelDevServer : IDisposable
             : null;
     }
 
-    private void Log(string msg) => Console.WriteLine($"  [dev] {msg}");
-    private void LogError(string msg) => Console.Error.WriteLine($"  [dev] ERROR: {msg}");
+    private void Log(string msg) => Console.WriteLine($"  [live] {msg}");
+    private void LogError(string msg) => Console.Error.WriteLine($"  [live] ERROR: {msg}");
 
     public void Dispose()
     {

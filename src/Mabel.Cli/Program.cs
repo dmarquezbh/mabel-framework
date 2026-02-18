@@ -27,7 +27,7 @@ return args[0].ToLowerInvariant() switch
     "setup"   => RunSetup(args),
     "create"  => RunCreate(args),
     "deploy"  => RunDeploy(args),
-    "dev"      => RunDev(args),
+    "live"     => RunLive(args),
     "devices"  => RunDevices(),
     "usb-help" => RunUsbHelp(args),
     "version" or "--version" or "-v" => PrintVersion(),
@@ -182,15 +182,15 @@ int RunDeploy(string[] args)
     return result.Success ? 0 : 1;
 }
 
-int RunDev(string[] args)
+int RunLive(string[] args)
 {
     var projectPath = GetPositional(args, 1) ?? ".";
     var portStr = GetArg(args, "--port", "-P");
     var port = portStr is not null && int.TryParse(portStr, out var p) ? p : 5555;
     var verbose = HasFlag(args, "--verbose");
 
-    Ansi.Header("mabel dev");
-    Ansi.Info("Hot reload dev server (like Expo)");
+    Ansi.Header("mabel live");
+    Ansi.Info("Hot reload dev server — edit, save, see changes instantly");
     Console.WriteLine();
 
     using var server = new MabelDevServer(shell, projectPath, port, verbose);
@@ -293,7 +293,7 @@ int PrintUsage()
     Console.WriteLine($"    {"setup",-12}  Install dependencies (.NET, Swift, xtool, wasmtime)");
     Console.WriteLine($"    {"create",-12} Scaffold a new Mabel project");
     Console.WriteLine($"    {"deploy",-12} Build and run on a device/emulator");
-    Console.WriteLine($"    {"dev",-12}    Start dev server with hot reload (like Expo)");
+    Console.WriteLine($"    {"live",-12}   Start hot reload dev server (Mabel Live)");
     Console.WriteLine($"    {"devices",-12}List connected devices");
     Console.WriteLine($"    {"usb-help",-12}USB setup guide for physical devices");
     Console.WriteLine($"    {"version",-12}Show version");

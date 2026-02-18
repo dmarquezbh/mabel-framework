@@ -3,15 +3,15 @@ using Mabel.Core.Ports;
 namespace Mabel.Core.Features.DevServer;
 
 /// <summary>
-/// Dev server estilo Expo: observa arquivos, recompila o WASM,
-/// serve via HTTP e notifica clientes conectados via WebSocket.
+/// Mabel Live: hot reload server — watches files, recompiles WASM,
+/// serves via HTTP and notifies connected devices via WebSocket.
 ///
-/// Fluxo:
-///   1. mabel dev           -> inicia o server
-///   2. App Mabel Go (iOS)  -> conecta no IP:porta exibido no terminal
-///   3. Dev salva .razor     -> FileWatcher detecta mudanca
-///   4. Recompila blazor    -> gera novo .wasm
-///   5. WebSocket notifica  -> app baixa novo .wasm e re-renderiza
+/// Flow:
+///   1. mabel live          -> starts the server
+///   2. Mabel app on device -> connects to IP:port shown in terminal
+///   3. Dev saves .razor    -> FileWatcher detects change
+///   4. Recompiles blazor   -> generates new .wasm
+///   5. WebSocket notifies  -> app downloads new .wasm and re-renders
 /// </summary>
 /// <remarks>
 /// This is a simplified facade for the dev server workflow. For full functionality
@@ -67,8 +67,8 @@ public sealed class RunDevServer
     }
 
     /// <summary>
-    /// Retorna o IP local da maquina para exibir no terminal.
-    /// O dev movel aponta o app Mabel Go para esse IP.
+    /// Returns the local IP address to display in the terminal.
+    /// The developer points the Mabel app on the device to this IP.
     /// </summary>
     public string? GetLocalIp()
     {

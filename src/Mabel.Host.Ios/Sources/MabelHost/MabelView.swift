@@ -43,22 +43,59 @@ public class MabelEngine: ObservableObject {
     static func helloWorld() -> [RenderCommand] {
         [
             RenderCommand(op: .beginFrame, x: 0, y: 0, w: 0, h: 0,
-                          color: 0x1A1A2EFF, text: nil, radius: 0, fontSize: 0),
+                          color: 0x1A1A2EFF),
 
             RenderCommand(op: .roundRect, x: 40, y: 100, w: 300, h: 200,
-                          color: 0x16213EFF, text: nil, radius: 16, fontSize: 0),
+                          color: 0x16213EFF, radius: 16),
 
             RenderCommand(op: .text, x: 80, y: 170, w: 0, h: 0,
-                          color: 0xE94560FF, text: "Mabel Framework", radius: 0, fontSize: 28),
+                          color: 0xE94560FF, text: "Mabel Framework", fontSize: 28),
 
             RenderCommand(op: .text, x: 80, y: 210, w: 0, h: 0,
-                          color: 0x0F3460FF, text: "Hello from WASI!", radius: 0, fontSize: 18),
+                          color: 0x0F3460FF, text: "Hello from WASI!", fontSize: 18),
 
             RenderCommand(op: .circle, x: 190, y: 400, w: 0, h: 0,
-                          color: 0xE94560FF, text: nil, radius: 40, fontSize: 0),
+                          color: 0xE94560FF, radius: 40),
 
             RenderCommand(op: .endFrame, x: 0, y: 0, w: 0, h: 0,
-                          color: 0, text: nil, radius: 0, fontSize: 0),
+                          color: 0),
+        ]
+    }
+
+    /// Demo: renderiza um Glass Card com efeitos modernos (iOS 26 style).
+    static func glassDemo() -> [RenderCommand] {
+        [
+            RenderCommand(op: .beginFrame, x: 0, y: 0, w: 0, h: 0,
+                          color: 0x0A0A1AFF),
+
+            // Background gradient
+            RenderCommand(op: .linearGrad, x: 0, y: 0, w: 0, h: 812,
+                          color: 0x1A1A3EFF, color2: 0x0A0A1AFF),
+            RenderCommand(op: .rect, x: 0, y: 0, w: 390, h: 812,
+                          color: 0x1A1A3EFF),
+
+            // Glass card with shadow
+            RenderCommand(op: .shadow, x: 0, y: 8, w: 0, h: 0,
+                          color: 0x00000060, radius: 24),
+            RenderCommand(op: .blur, x: 0, y: 0, w: 0, h: 0,
+                          color: 0, radius: 40),
+            RenderCommand(op: .linearGrad, x: 40, y: 120, w: 40, h: 320,
+                          color: 0xFFFFFF30, color2: 0xFFFFFF10),
+            RenderCommand(op: .roundRect, x: 40, y: 120, w: 310, h: 200,
+                          color: 0xFFFFFF18, radius: 28),
+
+            // Glass card border (stroke)
+            RenderCommand(op: .stroke, x: 40, y: 120, w: 310, h: 200,
+                          color: 0xFFFFFF20, radius: 28, fontSize: 0.5),
+
+            // Card text
+            RenderCommand(op: .text, x: 64, y: 160, w: 0, h: 0,
+                          color: 0xFFFFFFFF, text: "Mabel Glass", fontSize: 32),
+            RenderCommand(op: .text, x: 64, y: 200, w: 0, h: 0,
+                          color: 0xFFFFFF99, text: "iOS 26 Design Language", fontSize: 16),
+
+            RenderCommand(op: .endFrame, x: 0, y: 0, w: 0, h: 0,
+                          color: 0),
         ]
     }
 }

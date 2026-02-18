@@ -41,3 +41,17 @@ credentials.json
 
 # Misc
 *.log
+
+# Build artifacts
+*.ipa
+*.app
+xtool/.xtool-tmp/
+xtool/MabelHello.app/
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# Device Manager tools (compilados)
+tools/device-manager/.build/
+
