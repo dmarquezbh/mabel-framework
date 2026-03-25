@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<title>Mabel Web Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #container { width: 100%; height: 100%; display: flex; flex-direction: column; }
+  #toolbar {
+    background: #16213e; color: #e0e0e0; padding: 8px 16px;
+    display: flex; align-items: center; gap: 12px; font-size: 13px;
+    border-bottom: 1px solid #0f3460;
+  }
+  #toolbar .logo { font-weight: 700; color: #e94560; font-size: 15px; }
+  #toolbar .status { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  #toolbar .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+  #toolbar .dot.connected { background: #4ecca3; }
+  #toolbar .dot.disconnected { background: #e94560; }
+  #canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { background: #fff; touch-action: none; }
+  #overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 18px; text-align: center; padding: 20px;
+    z-index: 100;
+  }
+  #overlay.hidden { display: none; }
+  #overlay .spinner { margin-bottom: 16px; font-size: 32px; animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="toolbar">
+    <span class="logo">Mabel</span>
+    <span id="info">Web Preview</span>
+    <span class="status">
+      <span id="build-label">v0</span>
+      <span id="status-dot" class="dot disconnected"></span>
+    </span>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+</div>
+<div id="overlay"><div><div class="spinner">&#9881;</div><br/>Connecting to Mabel Dev Server...</div></div>
+
+<script>
+(function() {
+  'use strict';
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const statusDot = document.getElementById('status-dot');
+  const buildLabel = document.getElementById('build-label');
+
+  // -- Responsive canvas sizing (mobile friendly) --
+  function resizeCanvas() {
+    const wrap = document.getElementById('canvas-wrap');
+    const dpr = window.devicePixelRatio || 1;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // -- RGBA uint32 (0xRRGGBBAA) to CSS --
+  function rgbaToCSS(c) {
+    const r = (c >>> 24) & 0xFF;
+    const g = (c >>> 16) & 0xFF;
+    const b = (c >>> 8) & 0xFF;
+    const a = (c & 0xFF) / 255;
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + a.toFixed(3) + ')';
+  }
+
+  // -- RenderOp constants (must match Protocol.cs) --
+  const Op = {
+    Rect: 0x01, RoundRect: 0x02, Circle: 0x03, Line: 0x04, Text: 0x05, Image: 0x06,
+    Shadow: 0x07, Blur: 0x08, LinearGrad: 0x09, RadialGrad: 0x0A, Stroke: 0x0B, Path: 0x0C,
+    PushClip: 0x10, PopClip: 0x11, PushOpacity: 0x12, PopOpacity: 0x13,
+    Translate: 0x14, Scale: 0x15, Rotate: 0x16,
+    BeginFrame: 0xF0, EndFrame: 0xF1
+  };
+
+  // -- Renderer state --
+  let currentGradient = null;
+  const stateStack = [];
+
+  function getFill(fallbackColor) {
+    if (currentGradient) {
+      const g = currentGradient;
+      currentGradient = null;
+      return g;
+    }
+    return rgbaToCSS(fallbackColor);
+  }
+
+  // -- Canvas2D renderer (implements ICanvas / MabelRenderer logic) --
+  function renderCommands(commands) {
+    for (const cmd of commands) {
+      switch (cmd.op) {
+        case Op.BeginFrame:
+          ctx.save();
+          ctx.fillStyle = rgbaToCSS(cmd.color);
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          break;
+
+        case Op.Rect:
+          ctx.fillStyle = getFill(cmd.color);
+          ctx.fillRect(cmd.x, cmd.y, cmd.w, cmd.h);
+          break;
+
+        case Op.RoundRect:
+          ctx.fillStyle = getFill(cmd.color);
+          ctx.beginPath();
+          roundRect(ctx, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius);
+          ctx.fill();
+          break;
+
+        case Op.Circle:
+          ctx.fillStyle = getFill(cmd.color);
+          ctx.beginPath();
+          ctx.arc(cmd.x, cmd.y, cmd.radius, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+
+        case Op.Line:
+          ctx.strokeStyle = rgbaToCSS(cmd.color);
+          ctx.lineWidth = cmd.fontSize || 1;
+          ctx.beginPath();
+          ctx.moveTo(cmd.x, cmd.y);
+          ctx.lineTo(cmd.w, cmd.h);
+          ctx.stroke();
+          break;
+
+        case Op.Text:
+          ctx.fillStyle = rgbaToCSS(cmd.color);
+          ctx.font = cmd.fontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          ctx.textBaseline = 'top';
+          ctx.fillText(cmd.text || '', cmd.x, cmd.y);
+          break;
+
+        case Op.Image:
+          // Image rendering - load and cache
+          drawImage(cmd.text, cmd.x, cmd.y, cmd.w, cmd.h);
+          break;
+
+        case Op.Shadow:
+          ctx.shadowOffsetX = cmd.x;
+          ctx.shadowOffsetY = cmd.y;
+          ctx.shadowBlur = cmd.radius;
+          ctx.shadowColor = rgbaToCSS(cmd.color);
+          break;
+
+        case Op.Blur:
+          ctx.filter = cmd.radius > 0 ? 'blur(' + cmd.radius + 'px)' : 'none';
+          break;
+
+        case Op.LinearGrad: {
+          const lg = ctx.createLinearGradient(cmd.x, cmd.y, cmd.w, cmd.h);
+          lg.addColorStop(0, rgbaToCSS(cmd.color));
+          lg.addColorStop(1, rgbaToCSS(cmd.color2));
+          currentGradient = lg;
+          break;
+        }
+
+        case Op.RadialGrad: {
+          const rg = ctx.createRadialGradient(cmd.x, cmd.y, 0, cmd.x, cmd.y, cmd.radius);
+          rg.addColorStop(0, rgbaToCSS(cmd.color));
+          rg.addColorStop(1, rgbaToCSS(cmd.color2));
+          currentGradient = rg;
+          break;
+        }
+
+        case Op.Stroke:
+          ctx.strokeStyle = rgbaToCSS(cmd.color);
+          ctx.lineWidth = cmd.fontSize || 1;
+          ctx.beginPath();
+          roundRect(ctx, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius);
+          ctx.stroke();
+          break;
+
+        case Op.Path: {
+          const p = new Path2D(cmd.text || '');
+          ctx.fillStyle = getFill(cmd.color);
+          ctx.fill(p);
+          break;
+        }
+
+        case Op.PushClip:
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(cmd.x, cmd.y, cmd.w, cmd.h);
+          ctx.clip();
+          break;
+
+        case Op.PopClip:
+          ctx.restore();
+          break;
+
+        case Op.PushOpacity:
+          stateStack.push(ctx.globalAlpha);
+          ctx.globalAlpha *= cmd.x;
+          break;
+
+        case Op.PopOpacity:
+          ctx.globalAlpha = stateStack.length > 0 ? stateStack.pop() : 1;
+          break;
+
+        case Op.Translate:
+          ctx.translate(cmd.x, cmd.y);
+          break;
+
+        case Op.Scale:
+          ctx.scale(cmd.x, cmd.y);
+          break;
+
+        case Op.Rotate:
+          ctx.rotate(cmd.x);
+          break;
+
+        case Op.EndFrame:
+          ctx.restore();
+          currentGradient = null;
+          break;
+      }
+    }
+  }
+
+  // -- Helpers --
+
+  function roundRect(c, x, y, w, h, r) {
+    if (r <= 0) { c.rect(x, y, w, h); return; }
+    r = Math.min(r, Math.min(w, h) / 2);
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  const imageCache = {};
+  function drawImage(id, x, y, w, h) {
+    if (!id) return;
+    if (imageCache[id]) {
+      ctx.drawImage(imageCache[id], x, y, w, h);
+      return;
+    }
+    const img = new Image();
+    img.onload = function() { imageCache[id] = img; };
+    img.src = id;
+  }
+
+  // -- Touch/Pointer events -> InputEvents --
+  const InputType = { TouchDown: 0x01, TouchUp: 0x02, TouchMove: 0x03 };
+
+  function getCanvasPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches ? e.touches[0] || e.changedTouches[0] : e;
+    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+  }
+
+  canvas.addEventListener('pointerdown', function(e) {
+    const p = getCanvasPos(e);
+    sendInput(InputType.TouchDown, p.x, p.y);
+  });
+  canvas.addEventListener('pointermove', function(e) {
+    if (e.buttons === 0) return;
+    const p = getCanvasPos(e);
+    sendInput(InputType.TouchMove, p.x, p.y);
+  });
+  canvas.addEventListener('pointerup', function(e) {
+    const p = getCanvasPos(e);
+    sendInput(InputType.TouchUp, p.x, p.y);
+  });
+
+  let ws = null;
+  function sendInput(type, x, y) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: type, x: x, y: y }));
+    }
+  }
+
+  // -- Demo frame (shown until real WASM data arrives) --
+  function renderDemo() {
+    const w = canvas.style.width ? parseInt(canvas.style.width) : 400;
+    const h = canvas.style.height ? parseInt(canvas.style.height) : 700;
+
+    renderCommands([
+      { op: Op.BeginFrame, color: 0xFFFFFFFF },
+      // Header
+      { op: Op.Rect, x: 0, y: 0, w: w, h: 56, color: 0xE94560FF },
+      { op: Op.Text, x: 16, y: 16, text: 'Mabel Web Preview', fontSize: 22, color: 0xFFFFFFFF },
+      // Content
+      { op: Op.Text, x: 16, y: 80, text: 'Aguardando dados do WASM...', fontSize: 16, color: 0x666666FF },
+      { op: Op.Text, x: 16, y: 110, text: 'O preview aparece aqui quando o', fontSize: 14, color: 0x999999FF },
+      { op: Op.Text, x: 16, y: 130, text: 'modulo WASM enviar render commands.', fontSize: 14, color: 0x999999FF },
+      // Sample shapes
+      { op: Op.RoundRect, x: 16, y: 170, w: w - 32, h: 100, radius: 12, color: 0xF0F0F0FF },
+      { op: Op.Circle, x: 66, y: 220, radius: 30, color: 0x4ECCA3FF },
+      { op: Op.Text, x: 110, y: 205, text: 'Componente de exemplo', fontSize: 15, color: 0x333333FF },
+      { op: Op.Text, x: 110, y: 228, text: 'Canvas2D renderer', fontSize: 12, color: 0x999999FF },
+      // Touch area
+      { op: Op.Stroke, x: 16, y: 290, w: w - 32, h: 80, radius: 8, color: 0xCCCCCCFF, fontSize: 2 },
+      { op: Op.Text, x: w / 2 - 60, y: 320, text: 'Toque para testar', fontSize: 14, color: 0xAAAAAAAA },
+      { op: Op.EndFrame }
+    ]);
+  }
+
+  // -- WebSocket connection to MabelDevServer --
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = proto + '//' + location.host + '/ws';
+    ws = new WebSocket(url);
+
+    ws.onopen = function() {
+      statusDot.className = 'dot connected';
+      overlay.className = 'hidden';
+      renderDemo();
+    };
+
+    ws.onmessage = function(e) {
+      const data = e.data;
+
+      // Hot reload notification: "reload:<version>"
+      if (typeof data === 'string' && data.startsWith('reload:')) {
+        const v = data.split(':')[1];
+        buildLabel.textContent = 'v' + v;
+        // Re-fetch and display - the page will get new render data
+        renderDemo(); // In full impl, re-download .wasm and re-render
+        return;
+      }
+
+      // Render commands as JSON array
+      try {
+        const commands = JSON.parse(data);
+        if (Array.isArray(commands)) {
+          resizeCanvas();
+          renderCommands(commands);
+        }
+      } catch (err) {
+        console.warn('[mabel] Could not parse message:', err);
+      }
+    };
+
+    ws.onclose = function() {
+      statusDot.className = 'dot disconnected';
+      // Reconnect after 2s
+      setTimeout(connect, 2000);
+    };
+
+    ws.onerror = function() {
+      ws.close();
+    };
+  }
+
+  // -- Boot --
+  connect();
+
+})();
+</script>
+</body>
+</html>
