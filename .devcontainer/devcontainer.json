@@ -1,0 +1,23 @@
+{
+  "name": "Mabel Framework",
+  "image": "mcr.microsoft.com/dotnet/sdk:10.0-preview",
+  "forwardPorts": [5555],
+  "portsAttributes": {
+    "5555": {
+      "label": "Mabel Preview",
+      "onAutoForward": "openBrowser",
+      "visibility": "public"
+    }
+  },
+  "postCreateCommand": "dotnet build",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp"
+      ]
+    },
+    "codespaces": {
+      "openFiles": ["src/Mabel.Core/Features/DevServer/MabelDevServer.cs"]
+    }
+  }
+}
