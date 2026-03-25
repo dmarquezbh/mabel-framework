@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Mabel.Core.Ports;
@@ -10,6 +11,7 @@ namespace Mabel.Core.Features.DevServer;
 /// Mabel Live — embedded HTTP + WebSocket server for hot reload.
 ///
 /// Endpoints:
+///   GET /                   -> web preview (Canvas2D renderer for mobile browser testing)
 ///   GET /mabel.wasm         -> serves the compiled WASM module
 ///   GET /status             -> JSON with build version and timestamp
 ///   WebSocket /ws           -> notifies "reload" when WASM is recompiled
@@ -36,6 +38,7 @@ public sealed class MabelDevServer : IDisposable
     private DateTime _lastBuild = DateTime.MinValue;
     private CancellationTokenSource? _cts;
     private int _rebuildInProgress;
+    private static readonly Lazy<string> WebPreviewHtml = new(() => LoadEmbeddedHtml());
 
     public MabelDevServer(IShellExecutor shell, string projectPath, int port = 5555, bool verbose = false)
     {
@@ -91,11 +94,13 @@ public sealed class MabelDevServer : IDisposable
 
         var ip = GetLocalIp() ?? "localhost";
         Log($"Dev server running on http://{ip}:{_port}");
+        Log($"  Preview:   http://{ip}:{_port}/");
         Log($"  WASM:      http://{ip}:{_port}/mabel.wasm");
         Log($"  WebSocket: ws://{ip}:{_port}/ws");
         Log($"  Status:    http://{ip}:{_port}/status");
         Log("");
-        Log("Point your Mabel Go app to this address.");
+        Log("Open the Preview URL on your phone to test!");
+        Log("Point your Mabel native app to this address.");
         Log("Press Ctrl+C to stop.\n");
 
         try
@@ -126,6 +131,11 @@ public sealed class MabelDevServer : IDisposable
 
             switch (path)
             {
+                case "/":
+                case "/web-preview":
+                    ServeWebPreview(ctx);
+                    break;
+
                 case "/mabel.wasm":
                     await ServeWasm(ctx);
                     break;
@@ -136,7 +146,7 @@ public sealed class MabelDevServer : IDisposable
 
                 default:
                     ctx.Response.StatusCode = 404;
-                    var body = Encoding.UTF8.GetBytes("Not found. Endpoints: /mabel.wasm, /ws, /status");
+                    var body = Encoding.UTF8.GetBytes("Not found. Endpoints: /, /mabel.wasm, /ws, /status");
                     await ctx.Response.OutputStream.WriteAsync(body, token);
                     ctx.Response.Close();
                     break;
@@ -367,6 +377,28 @@ public sealed class MabelDevServer : IDisposable
         return r.Success && !string.IsNullOrWhiteSpace(r.Output)
             ? r.Output.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim()
             : null;
+    }
+
+    private void ServeWebPreview(HttpListenerContext ctx)
+    {
+        var html = Encoding.UTF8.GetBytes(WebPreviewHtml.Value);
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        ctx.Response.ContentLength64 = html.Length;
+        ctx.Response.OutputStream.Write(html);
+        ctx.Response.Close();
+    }
+
+    private static string LoadEmbeddedHtml()
+    {
+        var asm = Assembly.GetExecutingAssembly();
+        var name = asm.GetManifestResourceNames()
+            .FirstOrDefault(n => n.EndsWith("web-preview.html", StringComparison.Ordinal));
+
+        if (name is null) return "<html><body><h1>web-preview.html not found in embedded resources.</h1></body></html>";
+
+        using var stream = asm.GetManifestResourceStream(name)!;
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return reader.ReadToEnd();
     }
 
     private void Log(string msg) => Console.WriteLine($"  [live] {msg}");
