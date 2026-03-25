@@ -11,9 +11,12 @@ namespace Mabel.Core.Features.DevServer;
 /// Mabel Live — embedded HTTP + WebSocket server for hot reload.
 ///
 /// Endpoints:
-///   GET /                   -> web preview (Canvas2D renderer for mobile browser testing)
+///   GET /                   -> web preview (Canvas2D renderer + code editor for vibe coding)
 ///   GET /mabel.wasm         -> serves the compiled WASM module
 ///   GET /status             -> JSON with build version and timestamp
+///   GET /api/files          -> lists editable files (.razor, .cs, .css) in the web_app
+///   GET /api/file?path=     -> reads a file's content
+///   POST /api/code          -> writes code to a file (triggers rebuild via FileSystemWatcher)
 ///   WebSocket /ws           -> notifies "reload" when WASM is recompiled
 ///
 /// The Mabel app on the device:
@@ -95,12 +98,13 @@ public sealed class MabelDevServer : IDisposable
         var ip = GetLocalIp() ?? "localhost";
         Log($"Dev server running on http://{ip}:{_port}");
         Log($"  Preview:   http://{ip}:{_port}/");
+        Log($"  Code API:  POST http://{ip}:{_port}/api/code");
+        Log($"  Files:     http://{ip}:{_port}/api/files");
         Log($"  WASM:      http://{ip}:{_port}/mabel.wasm");
         Log($"  WebSocket: ws://{ip}:{_port}/ws");
-        Log($"  Status:    http://{ip}:{_port}/status");
         Log("");
         Log("Open the Preview URL on your phone to test!");
-        Log("Point your Mabel native app to this address.");
+        Log("POST to /api/code to push code changes (vibe coding).");
         Log("Press Ctrl+C to stop.\n");
 
         try
@@ -144,9 +148,27 @@ public sealed class MabelDevServer : IDisposable
                     ServeStatus(ctx);
                     break;
 
+                case "/api/files":
+                    ServeFileList(ctx);
+                    break;
+
+                case "/api/file":
+                    ServeFileContent(ctx);
+                    break;
+
+                case "/api/code":
+                    if (ctx.Request.HttpMethod == "POST")
+                        await HandleCodePost(ctx);
+                    else
+                    {
+                        ctx.Response.StatusCode = 405;
+                        ctx.Response.Close();
+                    }
+                    break;
+
                 default:
                     ctx.Response.StatusCode = 404;
-                    var body = Encoding.UTF8.GetBytes("Not found. Endpoints: /, /mabel.wasm, /ws, /status");
+                    var body = Encoding.UTF8.GetBytes("Not found. Endpoints: /, /mabel.wasm, /ws, /status, /api/files, /api/file, /api/code");
                     await ctx.Response.OutputStream.WriteAsync(body, token);
                     ctx.Response.Close();
                     break;
@@ -377,6 +399,145 @@ public sealed class MabelDevServer : IDisposable
         return r.Success && !string.IsNullOrWhiteSpace(r.Output)
             ? r.Output.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim()
             : null;
+    }
+
+    private void ServeFileList(HttpListenerContext ctx)
+    {
+        var webAppDir = Path.Combine(_projectPath, "web_app");
+        var files = new List<string>();
+
+        if (Directory.Exists(webAppDir))
+        {
+            var extensions = new[] { "*.razor", "*.cs", "*.css" };
+            foreach (var ext in extensions)
+            {
+                foreach (var file in Directory.GetFiles(webAppDir, ext, SearchOption.AllDirectories))
+                {
+                    var relative = Path.GetRelativePath(webAppDir, file).Replace('\\', '/');
+                    // Skip bin/obj directories
+                    if (relative.StartsWith("bin/", StringComparison.Ordinal) ||
+                        relative.StartsWith("obj/", StringComparison.Ordinal))
+                        continue;
+                    files.Add(relative);
+                }
+            }
+        }
+
+        files.Sort(StringComparer.Ordinal);
+        var json = JsonSerializer.Serialize(new { files });
+        var body = Encoding.UTF8.GetBytes(json);
+        ctx.Response.ContentType = "application/json";
+        ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+        ctx.Response.OutputStream.Write(body);
+        ctx.Response.Close();
+    }
+
+    private void ServeFileContent(HttpListenerContext ctx)
+    {
+        var query = ctx.Request.QueryString["path"];
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            ctx.Response.StatusCode = 400;
+            var err = Encoding.UTF8.GetBytes("{\"error\":\"Missing ?path= parameter\"}");
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.OutputStream.Write(err);
+            ctx.Response.Close();
+            return;
+        }
+
+        var webAppDir = Path.Combine(_projectPath, "web_app");
+        var fullPath = Path.GetFullPath(Path.Combine(webAppDir, query));
+
+        // Security: ensure the resolved path is inside web_app
+        if (!fullPath.StartsWith(webAppDir, StringComparison.Ordinal) || !File.Exists(fullPath))
+        {
+            ctx.Response.StatusCode = 404;
+            var err = Encoding.UTF8.GetBytes("{\"error\":\"File not found\"}");
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.OutputStream.Write(err);
+            ctx.Response.Close();
+            return;
+        }
+
+        var content = File.ReadAllText(fullPath);
+        var json = JsonSerializer.Serialize(new { path = query, content });
+        var body = Encoding.UTF8.GetBytes(json);
+        ctx.Response.ContentType = "application/json";
+        ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+        ctx.Response.OutputStream.Write(body);
+        ctx.Response.Close();
+    }
+
+    private async Task HandleCodePost(HttpListenerContext ctx)
+    {
+        string json;
+        using (var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8))
+            json = await reader.ReadToEndAsync();
+
+        CodePayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<CodePayload>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch
+        {
+            ctx.Response.StatusCode = 400;
+            var err = Encoding.UTF8.GetBytes("{\"error\":\"Invalid JSON. Expected {\\\"file\\\":\\\"...\\\",\\\"content\\\":\\\"...\\\"}\"}");
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.OutputStream.Write(err);
+            ctx.Response.Close();
+            return;
+        }
+
+        if (payload is null || string.IsNullOrWhiteSpace(payload.File) || payload.Content is null)
+        {
+            ctx.Response.StatusCode = 400;
+            var err = Encoding.UTF8.GetBytes("{\"error\":\"Missing 'file' or 'content' field\"}");
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.OutputStream.Write(err);
+            ctx.Response.Close();
+            return;
+        }
+
+        var webAppDir = Path.Combine(_projectPath, "web_app");
+        var fullPath = Path.GetFullPath(Path.Combine(webAppDir, payload.File));
+
+        // Security: path traversal protection
+        if (!fullPath.StartsWith(webAppDir, StringComparison.Ordinal))
+        {
+            ctx.Response.StatusCode = 403;
+            var err = Encoding.UTF8.GetBytes("{\"error\":\"Path outside project directory\"}");
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.OutputStream.Write(err);
+            ctx.Response.Close();
+            return;
+        }
+
+        // Create directory if needed
+        var dir = Path.GetDirectoryName(fullPath);
+        if (dir is not null && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+        // Write the file — FileSystemWatcher will trigger rebuild automatically
+        await File.WriteAllTextAsync(fullPath, payload.Content);
+        Log($"Code updated: {payload.File}");
+
+        var result = JsonSerializer.Serialize(new { ok = true, file = payload.File });
+        var body = Encoding.UTF8.GetBytes(result);
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "application/json";
+        ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+        ctx.Response.OutputStream.Write(body);
+        ctx.Response.Close();
+    }
+
+    private sealed record CodePayload(string? File, string? Content)
+    {
+        // Allow case-insensitive deserialization
+        public CodePayload() : this(null, null) { }
     }
 
     private void ServeWebPreview(HttpListenerContext ctx)
