@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Features\DevServer\web-preview.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Mabel.Wasi.Protocol\Mabel.Wasi.Protocol.csproj" />
   </ItemGroup>
 
