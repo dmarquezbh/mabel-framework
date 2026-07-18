@@ -5,24 +5,20 @@ namespace Mabel.Core.Infrastructure;
 
 public sealed class BashShellExecutor : IShellExecutor
 {
-    /// <summary>
-    /// Escapes a string for safe use as a bash argument using single-quote wrapping.
-    /// This prevents all shell metacharacter interpretation ($, `, \, !, etc.).
-    /// </summary>
-    private static string EscapeBashArg(string arg)
-        => "'" + arg.Replace("'", "'\\''") + "'";
-
     public ShellResult Run(string command, string? workingDir = null)
     {
         var psi = new ProcessStartInfo
         {
             FileName = "/bin/bash",
-            Arguments = $"-c {EscapeBashArg(command)}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        // ArgumentList passa cada arg como argv separado (sem re-parse do .NET, que
+        // NÃO honra aspas simples) — bash -c recebe o comando inteiro como 1 arg.
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add(command);
         if (workingDir is not null) psi.WorkingDirectory = workingDir;
 
         using var proc = Process.Start(psi)
@@ -42,10 +38,11 @@ public sealed class BashShellExecutor : IShellExecutor
         var psi = new ProcessStartInfo
         {
             FileName = "/bin/bash",
-            Arguments = $"-c {EscapeBashArg(command)}",
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add(command);
         if (workingDir is not null) psi.WorkingDirectory = workingDir;
 
         using var proc = Process.Start(psi)
