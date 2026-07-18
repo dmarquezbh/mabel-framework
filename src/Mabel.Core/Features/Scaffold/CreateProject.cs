@@ -32,7 +32,7 @@ public sealed class CreateProject
         {
             var r = p switch
             {
-                Platform.Ios     => ScaffoldIos(dir, req.BundleId),
+                Platform.Ios     => ScaffoldIos(dir, req.BundleId, req.AppName),
                 Platform.Android => ScaffoldAndroid(dir, req.BundleId),
                 Platform.Desktop => ScaffoldDesktop(dir),
                 _ => new(true, null),
@@ -44,7 +44,7 @@ public sealed class CreateProject
         return new(true, null);
     }
 
-    private ScaffoldResult ScaffoldIos(string dir, string bundleId)
+    private ScaffoldResult ScaffoldIos(string dir, string bundleId, string appName)
     {
         var iosDir = Path.Combine(dir, "ios_app");
         _fs.CreateDirectory(Path.Combine(iosDir, "Sources", "ios_app"));
@@ -85,7 +85,46 @@ struct ContentView: View {
 }
 """);
 
+        // Entry point (@main). Sem ele, o xtool gera o executavel <target>-App
+        // mas o link falha com "ld64.lld: error: undefined symbol: main".
+        var appStruct = ToSwiftTypeName(appName) + "App";
+        _fs.WriteAllText(Path.Combine(iosDir, "Sources", "ios_app", "App.swift"),
+$$"""
+import SwiftUI
+
+// Entry point do host iOS gerado pelo Mabel.
+// O @main abaixo produz o simbolo `main` que o executavel <target>-App do
+// xtool exige no link. Sem ele: "ld64.lld: error: undefined symbol: main".
+@main
+struct {{appStruct}}: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+""");
+
         return new(true, null);
+    }
+
+    /// <summary>
+    /// Converte um nome de app arbitrario (ex.: "another-project") num identificador
+    /// de tipo Swift valido em PascalCase (ex.: "RuiNative"). Prefixa "Mabel" se o
+    /// resultado ficar vazio ou comecar com digito.
+    /// </summary>
+    private static string ToSwiftTypeName(string raw)
+    {
+        var parts = (raw ?? string.Empty)
+            .Split(new[] { '-', '_', ' ', '.' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => new string(p.Where(char.IsLetterOrDigit).ToArray()))
+            .Where(p => p.Length > 0)
+            .Select(p => char.ToUpperInvariant(p[0]) + p.Substring(1));
+
+        var name = string.Concat(parts);
+        if (name.Length == 0 || char.IsDigit(name[0]))
+            name = "Mabel" + name;
+        return name;
     }
 
     private ScaffoldResult ScaffoldAndroid(string dir, string bundleId)
