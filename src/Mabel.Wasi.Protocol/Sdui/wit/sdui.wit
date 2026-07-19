@@ -9,15 +9,25 @@
 // número, omite null), lido pelo host Swift (MabelSdui.swift). O WIT documenta a
 // forma canônica e prepara um transporte binário WASI futuro sem mudar o modelo.
 //
-// Cobertura desta versão (Onda 1 — fundacionais do schema):
+// Cobertura Onda 1 — fundacionais do schema (v2):
 //   • versionamento + degradação graciosa (unknown-fallback, min-schema-version)
 //   • acessibilidade (a11y)
 //   • layout responsivo/adaptativo (size-class, breakpoints, flexbox, safe-area)
 //   • listas virtualizadas (list-data + item-template + bind)
 //   • navegação declarativa (nav-stack, nav, navigate)
+//
+// Cobertura Onda 🟡 — funcional (v3):
+//   • theming / dark-mode (theme-set, tokens de cor/tipografia/espaçamento)
+//   • i18n / l10n (localization: locale → chave → template)
+//   • forms + validação (text-field/select/checkbox/switch/slider/stepper,
+//     validation-rule, option)
+//   • catálogo ampliado (tab-bar, grid, sheet, avatar, chip)
+//   • media (video/audio + media metadata)
+//   • animações declarativas (animation) + transições de navegação
+//   • lifecycle (on-appear/on-disappear) + tabs
 // =============================================================================
 
-package mabel:sdui@0.2.0;
+package mabel:sdui@0.3.0;
 
 interface descriptor {
     // ── Primitivos ────────────────────────────────────────────────────────────
@@ -42,8 +52,12 @@ interface descriptor {
     // ── Enums de layout/estilo ──────────────────────────────────────────────────
 
     enum node-type {
+        // v1/v2
         screen, vstack, hstack, scroll-view, list, card, text, button,
         image, badge, progress-bar, divider, spacer, nav-stack,
+        // v3 (Onda 🟡)
+        text-field, select, checkbox, switch, slider, stepper, tab-bar,
+        grid, sheet, avatar, chip, video, audio,
     }
 
     enum axis { vertical, horizontal }
@@ -51,6 +65,7 @@ interface descriptor {
     enum font-weight { regular, medium, semibold, bold }
     enum wrap { no-wrap, wrap }
     enum size-class { any, compact, regular }
+    enum keyboard-type { default, number, email, phone, url, decimal }
 
     /// Bordas do safe-area respeitadas por um container.
     flags safe-area { top, right, bottom, left }
@@ -92,11 +107,14 @@ interface descriptor {
     // ── Navegação ───────────────────────────────────────────────────────────────
 
     enum nav-kind { push, pop, replace, root, pop-to }
+    enum nav-transition { default, none, fade, slide-up, push }
 
     record navigate {
         kind: nav-kind,
         route: option<string>,
         params: option<list<kv>>,
+        // v3: estilo visual da transição.
+        transition: option<nav-transition>,
     }
 
     record nav {
@@ -104,6 +122,92 @@ interface descriptor {
         title: option<string>,
         modal: option<bool>,
         hides-nav-bar: option<bool>,
+    }
+
+    // v3: uma aba de um tab-bar.
+    record tab {
+        route: string,
+        label: option<string>,
+        label-key: option<string>,
+        icon: option<string>,
+        badge: option<string>,
+    }
+
+    // ── Theming / dark-mode (v3) ────────────────────────────────────────────────
+
+    enum theme-mode { system, light, dark }
+
+    record text-style {
+        font-size: option<f32>,
+        weight: option<font-weight>,
+        color: option<rgba>,
+        color-token: option<string>,
+    }
+
+    /// token → valor. Uma variante de tema (clara OU escura).
+    record theme {
+        colors: option<list<tuple<string, rgba>>>,
+        text: option<list<tuple<string, text-style>>>,
+        spacing: option<list<tuple<string, f32>>>,
+    }
+
+    record theme-set {
+        light: option<theme>,
+        dark: option<theme>,
+    }
+
+    // ── i18n / l10n (v3) ────────────────────────────────────────────────────────
+
+    /// locale → (chave → template com placeholders {nome}).
+    record localization {
+        default-locale: option<string>,
+        locales: list<tuple<string, list<kv>>>,
+    }
+
+    // ── Forms + validação (v3) ──────────────────────────────────────────────────
+
+    record option-item {
+        value: string,
+        label: option<string>,
+        label-key: option<string>,
+    }
+
+    enum validation-kind { required, min-length, max-length, pattern, min, max, email }
+
+    record validation-rule {
+        kind: validation-kind,
+        param: option<string>,
+        message: option<string>,
+        message-key: option<string>,
+    }
+
+    // ── Media (v3) ──────────────────────────────────────────────────────────────
+
+    enum content-fit { cover, contain, fill }
+
+    record media {
+        autoplay: option<bool>,
+        loop: option<bool>,
+        muted: option<bool>,
+        controls: option<bool>,
+        poster: option<string>,
+        fit: option<content-fit>,
+    }
+
+    // ── Animação (v3) ─────────────────────────────────────────────────────────────
+
+    enum animation-kind { none, fade, slide, scale, expand }
+    enum animation-trigger { on-appear, on-tap, continuous }
+    enum easing { linear, ease-in, ease-out, ease-in-out, spring }
+    enum slide-from { bottom, top, leading, trailing }
+
+    record animation {
+        kind: animation-kind,
+        trigger: option<animation-trigger>,
+        duration-ms: option<u32>,
+        delay-ms: option<u32>,
+        easing: option<easing>,
+        direction: option<slide-from>,
     }
 
     // ── Ação semântica ────────────────────────────────────────────────────────────
@@ -152,6 +256,34 @@ interface descriptor {
         safe-area: option<safe-area>,
         // dados semânticos
         data: option<list<kv>>,
+
+        // ── v3 (Onda 🟡) ─────────────────────────────────────────────────────
+        // theming: referências a tokens do tema ativo.
+        background-token: option<string>,
+        color-token: option<string>,
+        border-color-token: option<string>,
+        text-style: option<string>,
+        spacing-token: option<string>,
+        // i18n.
+        text-key: option<string>,
+        text-args: option<list<kv>>,
+        // forms / inputs.
+        field: option<string>,
+        placeholder: option<string>,
+        placeholder-key: option<string>,
+        default-value: option<string>,
+        checked: option<bool>,
+        multiline: option<bool>,
+        secure: option<bool>,
+        keyboard: option<keyboard-type>,
+        options: option<list<option-item>>,
+        min: option<f32>,
+        max: option<f32>,
+        step: option<f32>,
+        disabled: option<bool>,
+        // catálogo ampliado.
+        columns: option<u32>,
+        presented: option<bool>,
     }
 
     /// Variação condicional de props por classe de tamanho / breakpoint.
@@ -195,10 +327,21 @@ interface descriptor {
         list: option<list-data>,
         nav: option<nav>,
         bind: option<list<kv>>,
+        // ── v3 (Onda 🟡) ─────────────────────────────────────────────────────
+        animation: option<animation>,
+        media: option<media>,
+        validation: option<list<validation-rule>>,
+        tabs: option<list<tab>>,
+        on-appear: option<action>,
+        on-disappear: option<action>,
     }
 
     record document {
         schema-version: u32,
         root: node,
+        // ── v3 (Onda 🟡) ─────────────────────────────────────────────────────
+        themes: option<theme-set>,
+        theme-mode: option<theme-mode>,
+        localization: option<localization>,
     }
 }

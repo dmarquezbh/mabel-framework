@@ -35,6 +35,23 @@ public enum SduiNavKind : byte
 }
 
 /// <summary>
+/// Estilo visual da transição de navegação (Onda 🟡). Byte-enum (decode UInt8).
+/// </summary>
+public enum SduiNavTransition : byte
+{
+    /// Default da plataforma (push lateral no iOS, etc.).
+    Default = 0,
+    /// Sem animação (troca instantânea).
+    None = 1,
+    /// Fade cruzado.
+    Fade = 2,
+    /// Sobe de baixo (apresentação modal).
+    SlideUp = 3,
+    /// Empurra lateralmente.
+    Push = 4,
+}
+
+/// <summary>
 /// Transição de navegação declarativa carregada por uma SduiAction. O host a
 /// aplica à pilha do NavStack ancestral.
 /// </summary>
@@ -49,6 +66,27 @@ public sealed record SduiNavigate
 
     /// Parâmetros da rota (deep-link args). Entregues ao Screen destino.
     public IReadOnlyDictionary<string, string>? Params { get; init; }
+
+    /// Estilo visual da transição (Onda 🟡). Ausente ⇒ Default da plataforma.
+    public SduiNavTransition? Transition { get; init; }
+}
+
+/// <summary>
+/// Uma aba de um nó TabBar (Onda 🟡). Cada aba aponta pra uma rota (um Screen do
+/// NavStack/TabBar) e carrega rótulo + ícone + badge opcionais.
+/// </summary>
+public sealed record SduiTab
+{
+    /// Rota do Screen ativado ao selecionar a aba.
+    public required string Route { get; init; }
+    /// Rótulo cru da aba. Ausente ⇒ só ícone.
+    public string? Label { get; init; }
+    /// Rótulo localizável (i18n). Vence Label quando resolvido.
+    public string? LabelKey { get; init; }
+    /// Ícone (asset id / nome de SF Symbol).
+    public string? Icon { get; init; }
+    /// Texto de badge (ex.: contagem "3"). Ausente ⇒ sem badge.
+    public string? Badge { get; init; }
 }
 
 /// <summary>

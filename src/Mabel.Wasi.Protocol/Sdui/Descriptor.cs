@@ -49,6 +49,54 @@ public enum SduiNodeType : byte
     /// Pilha de navegação: hospeda Screens e executa ações navigate:push/pop/…
     /// → UINavigationController. Ver Navigation.cs.
     NavStack    = 0x0E,
+
+    // ── Onda 🟡 (funcional) — schema v3 ──────────────────────────────────────
+    // Forms (ver Forms.cs), catálogo ampliado, media (ver Media.cs). Todos são
+    // nós NOVOS: um host v2 não os reconhece e aplica SduiUnknownFallback
+    // (default RenderChildren) — retrocompat preservada.
+
+    /// Campo de texto editável. → UITextField / TextBox. Ver Forms.cs.
+    TextField   = 0x0F,
+    /// Seleção de uma opção dentre várias (dropdown/picker). → ComboBox. Ver Forms.cs.
+    Select      = 0x10,
+    /// Caixa de marcação booleana. → CheckBox. Ver Forms.cs.
+    Checkbox    = 0x11,
+    /// Alternância on/off. → ToggleSwitch. Ver Forms.cs.
+    Switch      = 0x12,
+    /// Controle deslizante contínuo (Props.Min/Max/Value/Step). → Slider. Ver Forms.cs.
+    Slider      = 0x13,
+    /// Incremento/decremento numérico (Props.Min/Max/Value/Step). → Stepper. Ver Forms.cs.
+    Stepper     = 0x14,
+    /// Barra de abas (Nav.Tabs). → UITabBarController / TabControl. Ver Navigation.cs.
+    TabBar      = 0x15,
+    /// Grade de N colunas (Props.Columns). → UICollectionView grid / UniformGrid.
+    Grid        = 0x16,
+    /// Painel modal/gaveta apresentado sobre o conteúdo. → sheet/modal nativo.
+    Sheet       = 0x17,
+    /// Imagem de perfil circular (Props.Src + iniciais em Props.Text). → ImageView redondo.
+    Avatar      = 0x18,
+    /// Pílula compacta com rótulo (e ícone/remoção opcionais). → chip nativo.
+    Chip        = 0x19,
+    /// Vídeo (Props.Src + Media). → AVPlayer / MediaElement. Ver Media.cs.
+    Video       = 0x1A,
+    /// Áudio (Props.Src + Media). → AVAudioPlayer / MediaElement. Ver Media.cs.
+    Audio       = 0x1B,
+}
+
+/// <summary>Tipo de teclado sugerido a um TextField. Byte-enum (decode UInt8).</summary>
+public enum SduiKeyboardType : byte
+{
+    Default = 0,
+    /// Teclado numérico.
+    Number = 1,
+    /// Teclado de e-mail (@ e .).
+    Email = 2,
+    /// Teclado telefônico.
+    Phone = 3,
+    /// Teclado de URL.
+    Url = 4,
+    /// Entrada decimal (com separador).
+    Decimal = 5,
 }
 
 public enum SduiAxis : byte { Vertical = 0, Horizontal = 1 }
@@ -144,6 +192,70 @@ public sealed record SduiProps
     /// Metadados arbitrários do nó (campos do card: credor, código, valor...).
     /// Devolvidos ao app no tap, junto da ação. Não afetam layout/estilo.
     public IReadOnlyDictionary<string, string>? Data { get; init; }
+
+    // =========================================================================
+    // Onda 🟡 (funcional) — schema v3. Todos os campos são OPCIONAIS: ausentes,
+    // o host se comporta exatamente como na v2 (retrocompat).
+    // =========================================================================
+
+    // ── Theming: referências a TOKENS de tema (ver Theming.cs) ───────────────────
+    // Quando um *Token está presente, o host resolve a cor/estilo pelo tema ativo
+    // (claro/escuro) em vez do valor cru. O valor cru (Background/Color/...) vale
+    // como literal/fallback quando o token não existe no tema.
+    /// Token de cor de fundo (ex.: "surface", "card"). Ver SduiTheme.Colors.
+    public string? BackgroundToken { get; init; }
+    /// Token de cor de texto/tint (ex.: "onSurface", "primary").
+    public string? ColorToken { get; init; }
+    /// Token de cor de borda.
+    public string? BorderColorToken { get; init; }
+    /// Token de estilo de texto (ex.: "title", "body", "caption") — resolve
+    /// fontSize+weight+cor de uma vez. Ver SduiTheme.Text.
+    public string? TextStyle { get; init; }
+    /// Token de espaçamento aplicado como Spacing quando presente (ex.: "sm","md").
+    public string? SpacingToken { get; init; }
+
+    // ── i18n / l10n (ver Localization.cs) ────────────────────────────────────────
+    /// Chave de texto localizável. Presente ⇒ o host resolve pela tabela do locale
+    /// ativo e interpola TextArgs; Text vira fallback quando a chave não existe.
+    public string? TextKey { get; init; }
+    /// Argumentos de interpolação da chave (placeholders {nome}).
+    public IReadOnlyDictionary<string, string>? TextArgs { get; init; }
+
+    // ── Forms / inputs (ver Forms.cs) ────────────────────────────────────────────
+    /// Nome do campo no modelo do formulário. Liga o input a um valor de estado;
+    /// devolvido ao app junto do valor digitado. Base do two-way binding.
+    public string? Field { get; init; }
+    /// Placeholder (texto-fantasma) de um input vazio.
+    public string? Placeholder { get; init; }
+    /// Placeholder localizável (i18n). Vence Placeholder quando resolvido.
+    public string? PlaceholderKey { get; init; }
+    /// Valor inicial (texto) de um input — TextField/Select/Slider/Stepper.
+    /// Estado corrente é do host; isto é só a semente declarativa.
+    public string? DefaultValue { get; init; }
+    /// Estado marcado inicial de Checkbox/Switch.
+    public bool? Checked { get; init; }
+    /// TextField multilinha (textarea).
+    public bool? Multiline { get; init; }
+    /// TextField de senha (texto oculto).
+    public bool? Secure { get; init; }
+    /// Tipo de teclado sugerido (TextField).
+    public SduiKeyboardType? Keyboard { get; init; }
+    /// Opções de um Select. Ordem preservada.
+    public IReadOnlyList<SduiOption>? Options { get; init; }
+    /// Limite inferior (Slider/Stepper). Default do host = 0.
+    public float? Min { get; init; }
+    /// Limite superior (Slider/Stepper). Default do host = 1.
+    public float? Max { get; init; }
+    /// Passo de incremento (Slider/Stepper). Default do host = 1.
+    public float? Step { get; init; }
+    /// Estado desabilitado (não interativo) de um input/botão.
+    public bool? Disabled { get; init; }
+
+    // ── Catálogo ampliado ────────────────────────────────────────────────────────
+    /// Número de colunas de um Grid. Default do host = 2.
+    public int? Columns { get; init; }
+    /// Sheet/modal atualmente apresentado (true) ou oculto (false). Ausente ⇒ false.
+    public bool? Presented { get; init; }
 }
 
 /// <summary>
@@ -192,6 +304,30 @@ public sealed record SduiNode
     /// chave de Data) → chave em SduiListItem.Data. Só usado dentro do ItemTemplate
     /// de uma List virtualizada, onde o host substitui por linha.
     public IReadOnlyDictionary<string, string>? Bind { get; init; }
+
+    // ── Semântica transversal (Onda 🟡: funcional) — schema v3 ────────────────────
+
+    /// Animação/transição declarativa deste nó (fade/slide/scale/expand). O host
+    /// a aplica ao aparecer/tocar/continuamente. Ver Animation.cs.
+    public SduiAnimation? Animation { get; init; }
+
+    /// Metadados de media (poster, autoplay, loop, controls) para Video/Audio.
+    /// Ver Media.cs.
+    public SduiMedia? Media { get; init; }
+
+    /// Regras de validação declarativas de um input (Field). O host mostra o
+    /// estado de erro; SduiValidator avalia contra os valores. Ver Forms.cs.
+    public IReadOnlyList<SduiValidationRule>? Validation { get; init; }
+
+    /// Abas de um nó TabBar (rota + rótulo + ícone por aba). Ver Navigation.cs.
+    public IReadOnlyList<SduiTab>? Tabs { get; init; }
+
+    /// Ação disparada quando este nó (tipicamente Screen) entra em tela.
+    /// Lifecycle hook — o host a invoca no onAppear nativo.
+    public SduiAction? OnAppear { get; init; }
+
+    /// Ação disparada quando este nó sai de tela (onDisappear nativo).
+    public SduiAction? OnDisappear { get; init; }
 }
 
 /// <summary>Envelope de topo do documento SDUI. É isto que trafega como JSON.</summary>
@@ -200,4 +336,19 @@ public sealed record SduiDocument
     /// Versão do schema — o host recusa/adapta se não reconhecer.
     public int SchemaVersion { get; init; } = 1;
     public required SduiNode Root { get; init; }
+
+    // ── Onda 🟡 (funcional) — recursos de nível de documento (schema v3) ──────────
+
+    /// Conjunto de temas (claro/escuro) + tokens de cor/tipografia/espaçamento.
+    /// Os nós referenciam tokens via Props.*Token; o host resolve pelo tema ativo.
+    /// Ausente ⇒ sem theming (nós usam valores crus). Ver Theming.cs.
+    public SduiThemeSet? Themes { get; init; }
+
+    /// Modo de tema padrão sugerido pelo guest (System/Light/Dark). O host pode
+    /// sobrepor pela preferência do SO/usuário. Ausente ⇒ System.
+    public SduiThemeMode? ThemeMode { get; init; }
+
+    /// Tabela de strings localizáveis por locale. Os nós referenciam chaves via
+    /// Props.TextKey; o host resolve pelo locale ativo. Ver Localization.cs.
+    public SduiLocalization? Localization { get; init; }
 }
