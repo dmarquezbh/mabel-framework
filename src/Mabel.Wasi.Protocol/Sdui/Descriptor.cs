@@ -46,6 +46,9 @@ public enum SduiNodeType : byte
     Divider     = 0x0C,
     /// Espaço flexível/fixo entre irmãos.
     Spacer      = 0x0D,
+    /// Pilha de navegação: hospeda Screens e executa ações navigate:push/pop/…
+    /// → UINavigationController. Ver Navigation.cs.
+    NavStack    = 0x0E,
 }
 
 public enum SduiAxis : byte { Vertical = 0, Horizontal = 1 }
@@ -67,7 +70,15 @@ public readonly record struct SduiEdges(float Top, float Right, float Bottom, fl
 /// o gesto/seleção NATIVO do controle a isto e devolve {Name, Args, node.Id}
 /// pro app — sem coordenadas de pixel.
 /// </summary>
-public sealed record SduiAction(string Name, IReadOnlyDictionary<string, string>? Args = null);
+public sealed record SduiAction(string Name, IReadOnlyDictionary<string, string>? Args = null)
+{
+    /// <summary>
+    /// Navegação declarativa disparada por esta ação (opcional). Quando presente,
+    /// o host manipula a pilha do NavStack (push/pop/replace/root/popTo) além de —
+    /// ou em vez de — notificar o app. Ver Navigation.cs.
+    /// </summary>
+    public SduiNavigate? Navigate { get; init; }
+}
 
 /// <summary>
 /// Propriedades de um nó. Bag achatado; só os campos relevantes ao Type são
@@ -109,6 +120,26 @@ public sealed record SduiProps
     /// Progresso 0..1.
     public float? Value { get; init; }
 
+    // ── Layout responsivo / flexbox refinado ────────────────────────────────────
+    /// Restrições de tamanho (px lógicos). Mantidas quando o nó é esticado/comprimido.
+    public float? MinWidth { get; init; }
+    public float? MaxWidth { get; init; }
+    public float? MinHeight { get; init; }
+    public float? MaxHeight { get; init; }
+    /// Razão de aspecto largura/altura (ex.: 16f/9f). Preservada ao redimensionar.
+    public float? AspectRatio { get; init; }
+    /// flex-grow explícito. Sinônimo de Flex; se ambos setados, FlexGrow vence.
+    public float? FlexGrow { get; init; }
+    /// flex-shrink (0 = não encolhe). Default do host quando ausente = 1.
+    public float? FlexShrink { get; init; }
+    /// flex-basis: tamanho base no eixo principal antes de grow/shrink.
+    public float? FlexBasis { get; init; }
+    /// Quebra de linha dos filhos de um stack (flex-wrap). Ver SduiWrap.
+    public SduiWrap? Wrap { get; init; }
+    /// Bordas do safe-area (notch, home indicator, status bar) que este container
+    /// respeita. Ver SduiSafeArea (flags). Relevante em Screen/containers de topo.
+    public SduiSafeArea? SafeArea { get; init; }
+
     // ── Dados semânticos ─────────────────────────────────────────────────────────
     /// Metadados arbitrários do nó (campos do card: credor, código, valor...).
     /// Devolvidos ao app no tap, junto da ação. Não afetam layout/estilo.
@@ -128,6 +159,39 @@ public sealed record SduiNode
     public IReadOnlyList<SduiNode>? Children { get; init; }
     /// Ação disparada no tap (opcional). Presença ⇒ o host torna o nó clicável.
     public SduiAction? OnTap { get; init; }
+
+    // ── Semântica transversal (Onda 1: fundacionais do schema) ───────────────────
+
+    /// Semântica de acessibilidade (VoiceOver/traits). O host a mapeia pra
+    /// accessibilityLabel/traits/hint nativos. Ver Accessibility.cs.
+    public SduiA11y? A11y { get; init; }
+
+    /// Política de degradação graciosa quando o HOST não reconhece este nó —
+    /// Type desconhecido, ou MinSchemaVersion maior que a versão do host. Ausente
+    /// ⇒ o host aplica o default do contrato (RenderChildren). Ver Compatibility.cs.
+    public SduiUnknownFallback? Fallback { get; init; }
+
+    /// Versão mínima de schema que o host precisa entender pra renderizar este nó
+    /// fielmente. Host mais antigo aplica Fallback. Ausente ⇒ 1.
+    public int? MinSchemaVersion { get; init; }
+
+    /// Variações de Props por classe de tamanho / breakpoint (responsivo). O host
+    /// escolhe a primeira variação cujo When casa e a sobrepõe. Ver Responsive.cs.
+    public IReadOnlyList<SduiResponsiveOverride>? Responsive { get; init; }
+
+    /// Dados de lista virtualizada. Presente ⇒ este nó (Type=List) é lazy: o host
+    /// recicla views a partir de ItemTemplate + Items, sem expandir N nós. Distingue
+    /// List-virtualizada de VStack-estático. Ver Lists.cs.
+    public SduiListData? List { get; init; }
+
+    /// Metadados de navegação (rota nomeada, título) quando este nó é um Screen
+    /// dentro de um NavStack. Ver Navigation.cs.
+    public SduiNav? Nav { get; init; }
+
+    /// Ligações template→dados: mapeia prop-alvo ("text", "value", "src", ou uma
+    /// chave de Data) → chave em SduiListItem.Data. Só usado dentro do ItemTemplate
+    /// de uma List virtualizada, onde o host substitui por linha.
+    public IReadOnlyDictionary<string, string>? Bind { get; init; }
 }
 
 /// <summary>Envelope de topo do documento SDUI. É isto que trafega como JSON.</summary>
