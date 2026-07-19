@@ -1,11 +1,3 @@
 version: 1
 bundleID: com.mabel.capabilities.harness
-# Usage-strings óbvias (o time pediu: só as óbvias; free-gating se descobre no
-# device). ⚠️ CONFIRMAR o shape exato do `infoPlist` no xtool 1.17 — a doc do
-# xtool.yml suporta merge inline; se a chave for outra, mover pra um Info.plist.
-infoPlist:
-  NSCameraUsageDescription: "Provar a captura de câmera do Mabel (harness)."
-  NSPhotoLibraryUsageDescription: "Provar o picker de galeria do Mabel (harness)."
-  NSLocationWhenInUseUsageDescription: "Provar a localização do Mabel (harness)."
-  NSFaceIDUsageDescription: "Provar a biometria (Face ID) do Mabel (harness)."
-  NSBluetoothAlwaysUsageDescription: "Provar o BLE do Mabel (harness)."
+infoPath: Info.plist

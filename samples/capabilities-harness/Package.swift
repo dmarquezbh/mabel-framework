@@ -15,7 +15,7 @@ let package = Package(
     targets: [
         .target(
             name: "MabelCapabilitiesHarness",
-            dependencies: [.product(name: "MabelHost", package: "MabelHost")]
+            dependencies: [.product(name: "MabelHost", package: "Mabel.Host.Ios")]
         )
     ],
     swiftLanguageModes: [.v5]

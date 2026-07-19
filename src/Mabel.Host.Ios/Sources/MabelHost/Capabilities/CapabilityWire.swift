@@ -157,16 +157,16 @@ public final class CapabilityHost: CapabilityResponder {
 
     private func provider(for cap: CapabilityId) -> CapabilityProviding? {
         switch cap {
-        case .camera: return camera
-        case .photoLibrary: return photoLibrary
-        case .location: return location
-        case .notifications: return notifications
-        case .biometrics: return biometrics
-        case .secureStorage: return secureStorage
-        case .share: return share
-        case .clipboard: return clipboard
-        case .haptics: return haptics
-        case .bluetooth: return bluetooth
+        case .camera: return camera.map { $0 as CapabilityProviding }
+        case .photoLibrary: return photoLibrary.map { $0 as CapabilityProviding }
+        case .location: return location.map { $0 as CapabilityProviding }
+        case .notifications: return notifications.map { $0 as CapabilityProviding }
+        case .biometrics: return biometrics.map { $0 as CapabilityProviding }
+        case .secureStorage: return secureStorage.map { $0 as CapabilityProviding }
+        case .share: return share.map { $0 as CapabilityProviding }
+        case .clipboard: return clipboard.map { $0 as CapabilityProviding }
+        case .haptics: return haptics.map { $0 as CapabilityProviding }
+        case .bluetooth: return bluetooth.map { $0 as CapabilityProviding }
         }
     }
 
