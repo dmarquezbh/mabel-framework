@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 3,
+  "themeMode": 0,
+  "themes": {
+    "light": {
+      "colors": {
+        "surface": 4294967295,
+        "onSurface": 439089663,
+        "primary": 762777599,
+        "chipBg": 3991793663
+      },
+      "text": {
+        "title": { "fontSize": 20, "weight": 3, "colorToken": "onSurface" },
+        "body": { "fontSize": 14, "weight": 0, "colorToken": "onSurface" }
+      },
+      "spacing": { "sm": 8, "md": 16 }
+    },
+    "dark": {
+      "colors": {
+        "surface": 269488383,
+        "onSurface": 4076863231,
+        "chipBg": 875836927
+      },
+      "text": {
+        "title": { "fontSize": 20, "weight": 3, "colorToken": "onSurface" },
+        "body": { "fontSize": 14, "weight": 0, "colorToken": "onSurface" }
+      },
+      "spacing": { "sm": 8, "md": 16 }
+    }
+  },
+  "localization": {
+    "defaultLocale": "pt-BR",
+    "locales": {
+      "pt-BR": {
+        "form.title": "Cadastro de credor",
+        "field.name": "Nome",
+        "field.email": "E-mail",
+        "field.uf": "UF",
+        "opt.sp": "São Paulo",
+        "opt.rj": "Rio de Janeiro",
+        "terms": "Aceito os termos",
+        "err.required": "Campo obrigatório.",
+        "err.email": "E-mail inválido.",
+        "submit": "Enviar",
+        "tab.form": "Formulário",
+        "tab.perfil": "Perfil",
+        "chip.novo": "Novo"
+      },
+      "en": {
+        "form.title": "Creditor registration",
+        "field.name": "Name",
+        "field.email": "Email",
+        "submit": "Submit",
+        "tab.form": "Form",
+        "tab.perfil": "Profile"
+      }
+    }
+  },
+  "root": {
+    "id": "tabs",
+    "type": 21,
+    "tabs": [
+      { "route": "form", "labelKey": "tab.form", "icon": "square.and.pencil" },
+      { "route": "perfil", "labelKey": "tab.perfil", "icon": "person.crop.circle" }
+    ],
+    "children": [
+      {
+        "id": "screen:form",
+        "type": 1,
+        "nav": { "route": "form", "title": "Cadastro" },
+        "onAppear": { "name": "track", "args": { "screen": "form" } },
+        "props": { "backgroundToken": "surface", "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 } },
+        "children": [
+          {
+            "id": "card:form",
+            "type": 6,
+            "animation": { "kind": 1, "trigger": 0, "durationMs": 300 },
+            "props": { "backgroundToken": "surface", "cornerRadius": 12, "spacing": 12, "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 } },
+            "children": [
+              { "id": "title", "type": 7, "props": { "textStyle": "title", "textKey": "form.title" } },
+              {
+                "id": "f:name", "type": 15,
+                "props": { "field": "name", "placeholderKey": "field.name" },
+                "validation": [ { "kind": 0, "messageKey": "err.required" } ]
+              },
+              {
+                "id": "f:email", "type": 15,
+                "props": { "field": "email", "placeholderKey": "field.email", "keyboard": 2 },
+                "validation": [ { "kind": 0, "messageKey": "err.required" }, { "kind": 6, "messageKey": "err.email" } ]
+              },
+              {
+                "id": "f:uf", "type": 16,
+                "props": {
+                  "field": "uf",
+                  "options": [
+                    { "value": "SP", "labelKey": "opt.sp" },
+                    { "value": "RJ", "labelKey": "opt.rj" }
+                  ]
+                }
+              },
+              {
+                "id": "f:vol", "type": 19,
+                "props": { "field": "vol", "min": 0, "max": 100, "step": 5, "defaultValue": "30" }
+              },
+              {
+                "id": "f:qtd", "type": 20,
+                "props": { "field": "qtd", "min": 0, "max": 10, "step": 1, "defaultValue": "1" }
+              },
+              {
+                "id": "f:terms", "type": 17,
+                "props": { "field": "terms", "textKey": "terms", "checked": false },
+                "validation": [ { "kind": 0, "messageKey": "err.required" } ]
+              },
+              {
+                "id": "f:notify", "type": 18,
+                "props": { "field": "notify", "text": "Notificações", "checked": true }
+              },
+              {
+                "id": "chips", "type": 22,
+                "props": { "columns": 3, "spacing": 8 },
+                "children": [
+                  { "id": "c1", "type": 25, "props": { "textKey": "chip.novo", "backgroundToken": "chipBg", "colorToken": "onSurface" } },
+                  { "id": "c2", "type": 25, "props": { "text": "PJ", "backgroundToken": "chipBg", "colorToken": "onSurface" } },
+                  { "id": "c3", "type": 25, "props": { "text": "Ativo", "backgroundToken": "chipBg", "colorToken": "onSurface" } }
+                ]
+              },
+              {
+                "id": "submit", "type": 8,
+                "props": { "textKey": "submit", "textStyle": "body" },
+                "onTap": { "name": "submit" }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "screen:perfil",
+        "type": 1,
+        "nav": { "route": "perfil", "title": "Perfil" },
+        "onAppear": { "name": "track", "args": { "screen": "perfil" } },
+        "props": { "backgroundToken": "surface", "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 } },
+        "children": [
+          {
+            "id": "perfil:stack", "type": 2,
+            "props": { "spacing": 12 },
+            "children": [
+              { "id": "avatar", "type": 24, "props": { "text": "DM", "width": 64, "backgroundToken": "primary", "colorToken": "surface" } },
+              { "id": "vid", "type": 26, "props": { "src": "intro.mp4", "height": 160 }, "media": { "autoplay": false, "controls": true, "poster": "intro.jpg", "fit": 0 } }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

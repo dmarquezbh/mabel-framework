@@ -47,14 +47,23 @@ por suas próprias toolchains — ver seção de status por plataforma no PR.
 
 Ampliar o descriptor e o runtime para paridade com um framework de UI de produção.
 
-**Recursos de UI (schema + renderers por plataforma):**
-- 🟢 **Theming** — tokens de design (cores, tipografia, espaçamento), dark mode, tema por-tenant.
-- 🟢 **i18n / l10n** — strings externalizadas no descriptor, pluralização, RTL, formatação por locale.
-- 🟢 **Animações / transições** — primitivas declarativas (fade/slide/spring), transições de navegação.
-- 🟢 **Forms** — inputs, validação declarativa, binding two-way, estado de submit/erro.
-- 🟢 **Catálogo de componentes** — biblioteca versionada de nós + galeria/storybook por plataforma.
-- 🟢 **Media** — imagem (cache/placeholder), vídeo, ícones vetoriais, lazy-load.
-- 🟢 **Lifecycle** — hooks de tela (onAppear/onDisappear), deep-linking, restauração de estado.
+**Recursos de UI (schema + renderers por plataforma):** — Onda 🟡 entregue no schema
+v3 (contrato em `Mabel.Wasi.Protocol/Sdui/*` + WIT `sdui@0.3.0`; host de referência
+Windows/WPF renderizando; testes de round-trip/compat em `Mabel.Wasi.Protocol.Tests`).
+- 🟡 **Theming** — tokens (cores/tipografia/espaçamento) + dark mode via `SduiThemeSet`/
+  `SduiThemeResolver`; nós referenciam tokens (`*Token`/`TextStyle`). Falta: tema por-tenant.
+- 🟡 **i18n / l10n** — strings externalizadas (`SduiLocalization`/`SduiLocalizer`), fallback
+  em cadeia, interpolação `{arg}`, pluralização one/other. Falta: RTL, formatação numérica/data por locale.
+- 🟡 **Animações / transições** — primitivas declarativas (`SduiAnimation`: fade/slide/scale/
+  expand + easing/spring) + `SduiNavTransition`. Host WPF aplica fade/scale; falta paridade cross-host.
+- 🟡 **Forms** — inputs (TextField/Select/Checkbox/Switch/Slider/Stepper) + validação declarativa
+  (`SduiValidator`, regras required/len/pattern/min/max/email) + binding por `Field`. Falta: estado de submit assíncrono.
+- 🟡 **Catálogo de componentes** — nós ampliados (TabBar/Grid/Sheet/Avatar/Chip + inputs). Falta:
+  galeria/storybook por plataforma.
+- 🟡 **Media** — `SduiMedia` (poster/autoplay/loop/controls/fit) + nós Video/Audio. Host WPF =
+  placeholder. Falta: cache/lazy-load e player nativo real.
+- 🟡 **Lifecycle** — hooks `onAppear`/`onDisappear` + Tabs + deep-link (rota nomeada + params, já na v2).
+  Falta: restauração de estado, back-stack por-aba.
 
 **Developer Experience:**
 - 🟢 **DevTools** — inspector de árvore SDUI, overlay de estado, time-travel (base no ADR 0008).

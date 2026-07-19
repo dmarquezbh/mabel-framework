@@ -34,8 +34,32 @@ public sealed class MabelWindowsBuilder
     /// Contexto de binding da linha corrente (List virtualizada). Setado por linha.
     private IReadOnlyDictionary<string, string>? _row;
 
+    // ── Onda 🟡: theming + i18n ──────────────────────────────────────────────
+    // Resolvedores puros do contrato (Theming.cs / Localization.cs). Inicializados
+    // a partir do documento (tema ativo + locale). Nós resolvem cores/textos por
+    // token/chave; sem tokens/chaves, o comportamento é idêntico ao da v2.
+    private SduiThemeResolver _theme = new(null, SduiThemeMode.System);
+    private SduiLocalizer _l10n = new(null, null);
+    private bool _prefersDark;
+    private string? _locale;
+
     /// Callback disparado quando um nó clicável (onTap) é acionado.
     public Action<SduiNode, SduiAction>? OnAction { get; set; }
+
+    /// Callback de lifecycle (onAppear/onDisappear). Ligado ao Loaded/Unloaded nativo.
+    public Action<SduiNode, SduiAction>? OnLifecycle { get; set; }
+
+    /// Preferência de tema escuro do SO/usuário (afeta a resolução de tokens).
+    public void SetDarkMode(bool dark) => _prefersDark = dark;
+    /// Preferência de tema escuro ativa (telemetria).
+    public bool PrefersDark => _prefersDark;
+
+    /// Render estático (selftest/screenshot): as animações de aparição são
+    /// contadas mas NÃO escondem o conteúdo (não há clock pra revelá-lo). Numa
+    /// janela viva (app.Run) fica false → as animações rodam de verdade.
+    public bool StaticRender { get; set; }
+    /// Locale ativo (i18n). Ex.: "pt-BR", "en".
+    public void SetLocale(string? locale) => _locale = locale;
 
     // ── Telemetria de render (evidência do spike) ───────────────────────────
     public readonly Dictionary<SduiNodeType, int> Counts = new();
@@ -47,6 +71,15 @@ public sealed class MabelWindowsBuilder
     public int ResponsiveApplied { get; private set; }
     public string? PlaceholderText { get; private set; }
 
+    // ── Onda 🟡: telemetria funcional ─────────────────────────────────────────
+    public int ThemeTokensResolved { get; private set; }
+    public int I18nResolved { get; private set; }
+    public int InputsBuilt { get; private set; }
+    public int AnimationsApplied { get; private set; }
+    public int LifecycleHooks { get; private set; }
+    /// Inputs construídos, por Field → controle nativo (p/ --selftest inspecionar).
+    public readonly Dictionary<string, FrameworkElement> Inputs = new();
+
     /// Última List virtualizada instanciada + total lógico (p/ --selftest).
     public ListBox? LastList { get; private set; }
     public int LastListLogicalCount { get; private set; }
@@ -56,7 +89,13 @@ public sealed class MabelWindowsBuilder
 
     public void SetContainerWidth(double w) => _containerWidth = w;
 
-    public FrameworkElement Build(SduiDocument doc) => Build(doc.Root);
+    public FrameworkElement Build(SduiDocument doc)
+    {
+        // Onda 🟡: prepara tema ativo + locale a partir do documento.
+        _theme = new SduiThemeResolver(doc.Themes, doc.ThemeMode ?? SduiThemeMode.System, _prefersDark);
+        _l10n = new SduiLocalizer(doc.Localization, _locale ?? doc.Localization?.DefaultLocale);
+        return Build(doc.Root);
+    }
 
     private FrameworkElement Build(SduiNode node)
     {
@@ -86,6 +125,22 @@ public sealed class MabelWindowsBuilder
             SduiNodeType.NavStack    => BuildNavStack(node),
             SduiNodeType.Image       => new Border(),
             SduiNodeType.Spacer      => new Grid(),
+
+            // ── Onda 🟡 (funcional) ──────────────────────────────────────────
+            SduiNodeType.TextField   => BuildTextField(node),
+            SduiNodeType.Select      => BuildSelect(node),
+            SduiNodeType.Checkbox    => BuildCheckbox(node),
+            SduiNodeType.Switch      => BuildSwitch(node),
+            SduiNodeType.Slider      => BuildSlider(node),
+            SduiNodeType.Stepper     => BuildStepper(node),
+            SduiNodeType.TabBar      => BuildTabBar(node),
+            SduiNodeType.Grid        => Box(node.Props, BuildGrid(node)),
+            SduiNodeType.Sheet       => BuildSheet(node),
+            SduiNodeType.Avatar      => BuildAvatar(node),
+            SduiNodeType.Chip        => BuildChip(node),
+            SduiNodeType.Video       => BuildMediaPlaceholder(node, "▶ vídeo"),
+            SduiNodeType.Audio       => BuildMediaPlaceholder(node, "♪ áudio"),
+
             _                        => new Grid(),
         };
 
@@ -98,9 +153,67 @@ public sealed class MabelWindowsBuilder
         ApplySize(node.Props, element);
         ApplyConstraints(node.Props, element);
         ApplyA11y(node, element);
+        ApplyAnimation(node, element);
+        ApplyLifecycle(node, element);
         if (node.OnTap is { } action)
             element = MakeClickable(element, node, action);
         return element;
+    }
+
+    // ── Onda 🟡: animação (fade/scale/slide/expand) ──────────────────────────
+    private void ApplyAnimation(SduiNode node, FrameworkElement el)
+    {
+        if (node.Animation is not { } anim || anim.Kind == SduiAnimationKind.None) return;
+        AnimationsApplied++;
+        // Render estático: conta a animação mas mantém o conteúdo visível.
+        if (StaticRender) return;
+        double dur = (anim.DurationMs ?? 250) / 1000.0;
+        var duration = new System.Windows.Duration(TimeSpan.FromSeconds(dur));
+        var begin = TimeSpan.FromMilliseconds(anim.DelayMs ?? 0);
+
+        // OnAppear (default): dispara no Loaded. OnTap/Continuous ficam como intenção
+        // declarada (contadas), sem timeline aqui — o foco é validar o mapeamento.
+        if ((anim.Trigger ?? SduiAnimationTrigger.OnAppear) != SduiAnimationTrigger.OnAppear) return;
+
+        switch (anim.Kind)
+        {
+            case SduiAnimationKind.Fade:
+                el.Opacity = 0;
+                el.Loaded += (_, _) => el.BeginAnimation(UIElement.OpacityProperty,
+                    new System.Windows.Media.Animation.DoubleAnimation(0, 1, duration) { BeginTime = begin });
+                break;
+            case SduiAnimationKind.Scale:
+                var st = new ScaleTransform(0.8, 0.8);
+                el.RenderTransformOrigin = new Point(0.5, 0.5);
+                el.RenderTransform = st;
+                el.Loaded += (_, _) =>
+                {
+                    var a = new System.Windows.Media.Animation.DoubleAnimation(0.8, 1, duration) { BeginTime = begin };
+                    st.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+                    st.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+                };
+                break;
+            default: // Slide/Expand: fade como aproximação neutra (sem quebrar layout headless).
+                el.Opacity = 0;
+                el.Loaded += (_, _) => el.BeginAnimation(UIElement.OpacityProperty,
+                    new System.Windows.Media.Animation.DoubleAnimation(0, 1, duration) { BeginTime = begin });
+                break;
+        }
+    }
+
+    // ── Onda 🟡: lifecycle (onAppear/onDisappear) ────────────────────────────
+    private void ApplyLifecycle(SduiNode node, FrameworkElement el)
+    {
+        if (node.OnAppear is { } appear)
+        {
+            LifecycleHooks++;
+            el.Loaded += (_, _) => OnLifecycle?.Invoke(node, appear);
+        }
+        if (node.OnDisappear is { } disappear)
+        {
+            LifecycleHooks++;
+            el.Unloaded += (_, _) => OnLifecycle?.Invoke(node, disappear);
+        }
     }
 
     private FrameworkElement BuildFirstChild(SduiNode node)
@@ -210,18 +323,41 @@ public sealed class MabelWindowsBuilder
 
     private TextBlock BuildText(SduiNode node)
     {
-        double fs = node.Props?.FontSize ?? 14;
+        // Onda 🟡: token de tipografia (TextStyle) provê defaults; FontSize/Weight
+        // explícitos do nó vencem. Cor resolve token de tema → cor crua.
+        var style = _theme.TextStyle(node.Props?.TextStyle);
+        double fs = node.Props?.FontSize ?? style?.FontSize ?? 14;
         fs = ApplyResponsiveFontSize(node, fs);
+        var weight = node.Props?.Weight ?? style?.Weight;
         var tb = new TextBlock
         {
             Text = ResolveText(node),
             FontSize = fs,
-            FontWeight = Weight(node.Props?.Weight),
+            FontWeight = Weight(weight),
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        if (node.Props?.Color is { } col) tb.Foreground = Brush(col);
+        if (ResolveColor(node.Props) is { } col) tb.Foreground = Brush(col);
+        else if (_theme.Color(style?.ColorToken) is { } sc) tb.Foreground = Brush(sc);
+        else if (style?.Color is { } rawc) tb.Foreground = Brush(rawc);
         return tb;
+    }
+
+    // ── Onda 🟡: resolução de cor via tema (token → cru) ─────────────────────
+    private uint? ResolveColor(SduiProps? p)
+    {
+        if (p?.ColorToken is not null && _theme.Color(p.ColorToken) is { } c) { ThemeTokensResolved++; return c; }
+        return p?.Color;
+    }
+    private uint? ResolveBackground(SduiProps? p)
+    {
+        if (p?.BackgroundToken is not null && _theme.Color(p.BackgroundToken) is { } c) { ThemeTokensResolved++; return c; }
+        return p?.Background;
+    }
+    private uint? ResolveBorderColor(SduiProps? p)
+    {
+        if (p?.BorderColorToken is not null && _theme.Color(p.BorderColorToken) is { } c) { ThemeTokensResolved++; return c; }
+        return p?.BorderColor;
     }
 
     private Border BuildBadge(SduiNode node)
@@ -234,7 +370,7 @@ public sealed class MabelWindowsBuilder
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        if (node.Props?.Color is { } col) tb.Foreground = Brush(col);
+        if (ResolveColor(node.Props) is { } col) tb.Foreground = Brush(col);
         var pill = new Border
         {
             Child = tb,
@@ -242,7 +378,7 @@ public sealed class MabelWindowsBuilder
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        if (node.Props?.Background is { } bg) pill.Background = Brush(bg);
+        if (ResolveBackground(node.Props) is { } bg) pill.Background = Brush(bg);
         if (node.Props?.CornerRadius is { } cr) pill.CornerRadius = new CornerRadius(cr);
         return pill;
     }
@@ -258,7 +394,7 @@ public sealed class MabelWindowsBuilder
             Background = new SolidColorBrush(Color.FromRgb(0xE6, 0xE6, 0xE6)),
             BorderThickness = new Thickness(0),
         };
-        if (node.Props?.Color is { } col) pb.Foreground = Brush(col);
+        if (ResolveColor(node.Props) is { } col) pb.Foreground = Brush(col);
         return pb;
     }
 
@@ -267,6 +403,235 @@ public sealed class MabelWindowsBuilder
         var b = new Border { Height = 1 };
         b.Background = node.Props?.Background is { } bg ? Brush(bg) : new SolidColorBrush(Color.FromRgb(0xE6, 0xE6, 0xE6));
         return b;
+    }
+
+    // =========================================================================
+    // Onda 🟡 (funcional): inputs de formulário + catálogo ampliado + media.
+    // =========================================================================
+
+    /// Envolve um input num painel vertical com rótulo de erro (estado de validação).
+    private FrameworkElement WithField(SduiNode node, FrameworkElement input)
+    {
+        if (node.Props?.Field is { } field)
+        {
+            InputsBuilt++;
+            Inputs[field] = input;
+        }
+        if (node.Props?.Disabled == true && input is Control ctl) ctl.IsEnabled = false;
+        return input;
+    }
+
+    private FrameworkElement BuildTextField(SduiNode node)
+    {
+        var placeholder = _l10n.ResolvePlaceholder(node.Props);
+        FrameworkElement input;
+        if (node.Props?.Secure == true)
+        {
+            input = new PasswordBox { Padding = new Thickness(6, 4, 6, 4) };
+        }
+        else
+        {
+            var tb = new TextBox
+            {
+                Text = node.Props?.DefaultValue ?? "",
+                Padding = new Thickness(6, 4, 6, 4),
+                AcceptsReturn = node.Props?.Multiline == true,
+                TextWrapping = node.Props?.Multiline == true ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                MinHeight = node.Props?.Multiline == true ? 64 : 0,
+            };
+            if (placeholder is not null) AutomationProperties.SetHelpText(tb, placeholder);
+            input = tb;
+        }
+        return WithField(node, input);
+    }
+
+    private FrameworkElement BuildSelect(SduiNode node)
+    {
+        var combo = new ComboBox { Padding = new Thickness(6, 4, 6, 4) };
+        foreach (var opt in node.Props?.Options ?? Array.Empty<SduiOption>())
+        {
+            var label = opt.LabelKey is { } k ? _l10n.Resolve(k, null, opt.Label ?? opt.Value)
+                      : opt.Label ?? opt.Value;
+            if (opt.LabelKey is not null) I18nResolved++;
+            combo.Items.Add(new ComboBoxItem { Content = label, Tag = opt.Value });
+        }
+        // Seleção inicial (DefaultValue casa Value da opção).
+        if (node.Props?.DefaultValue is { } dv)
+            combo.SelectedIndex = (node.Props?.Options ?? Array.Empty<SduiOption>())
+                .ToList().FindIndex(o => o.Value == dv);
+        return WithField(node, combo);
+    }
+
+    private FrameworkElement BuildCheckbox(SduiNode node)
+    {
+        var cb = new CheckBox
+        {
+            Content = ResolveText(node),
+            IsChecked = node.Props?.Checked ?? false,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        return WithField(node, cb);
+    }
+
+    private FrameworkElement BuildSwitch(SduiNode node)
+    {
+        // WPF não tem toggle-switch nativo; ToggleButton estilizado como pílula.
+        var tgl = new System.Windows.Controls.Primitives.ToggleButton
+        {
+            Content = ResolveText(node),
+            IsChecked = node.Props?.Checked ?? false,
+            Padding = new Thickness(8, 3, 8, 3),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        return WithField(node, tgl);
+    }
+
+    private FrameworkElement BuildSlider(SduiNode node)
+    {
+        var sl = new Slider
+        {
+            Minimum = node.Props?.Min ?? 0,
+            Maximum = node.Props?.Max ?? 1,
+            Value = ParseValue(node, node.Props?.Min ?? 0),
+            TickFrequency = node.Props?.Step ?? 0,
+            IsSnapToTickEnabled = node.Props?.Step is > 0,
+            MinWidth = 120,
+        };
+        return WithField(node, sl);
+    }
+
+    private FrameworkElement BuildStepper(SduiNode node)
+    {
+        double min = node.Props?.Min ?? 0, max = node.Props?.Max ?? double.MaxValue;
+        double step = node.Props?.Step ?? 1;
+        var value = ParseValue(node, min);
+        var label = new TextBlock { VerticalAlignment = VerticalAlignment.Center, MinWidth = 32, TextAlignment = TextAlignment.Center };
+        label.Text = value.ToString(CultureInfo.InvariantCulture);
+        var minus = new Button { Content = "−", Width = 28 };
+        var plus = new Button { Content = "+", Width = 28 };
+        void Refresh() => label.Text = value.ToString(CultureInfo.InvariantCulture);
+        minus.Click += (_, _) => { value = Math.Max(min, value - step); Refresh(); };
+        plus.Click += (_, _) => { value = Math.Min(max, value + step); Refresh(); };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
+        panel.Children.Add(minus);
+        panel.Children.Add(label);
+        panel.Children.Add(plus);
+        return WithField(node, panel);
+    }
+
+    private double ParseValue(SduiNode node, double fallback) =>
+        double.TryParse(node.Props?.DefaultValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
+            ? v : node.Props?.Value ?? fallback;
+
+    private FrameworkElement BuildTabBar(SduiNode node)
+    {
+        var tabs = node.Tabs ?? Array.Empty<SduiTab>();
+        var tc = new TabControl { TabStripPlacement = System.Windows.Controls.Dock.Bottom };
+        var screens = (node.Children ?? Array.Empty<SduiNode>())
+            .Where(c => c.Type == SduiNodeType.Screen)
+            .ToDictionary(c => c.Nav?.Route ?? c.Id, c => c);
+        foreach (var tab in tabs)
+        {
+            var header = tab.LabelKey is { } k ? _l10n.Resolve(k, null, tab.Label ?? tab.Route) : tab.Label ?? tab.Route;
+            if (tab.LabelKey is not null) I18nResolved++;
+            var content = screens.TryGetValue(tab.Route, out var scr) ? Build(scr) : new Grid();
+            tc.Items.Add(new TabItem { Header = header, Content = content });
+        }
+        return tc;
+    }
+
+    private FrameworkElement BuildGrid(SduiNode node)
+    {
+        int cols = Math.Max(1, node.Props?.Columns ?? 2);
+        var uni = new System.Windows.Controls.Primitives.UniformGrid { Columns = cols };
+        double spacing = node.Props?.Spacing ?? 0;
+        foreach (var child in node.Children ?? Array.Empty<SduiNode>())
+        {
+            var view = Build(child);
+            if (spacing > 0) view.Margin = new Thickness(spacing / 2);
+            uni.Children.Add(view);
+        }
+        return uni;
+    }
+
+    private FrameworkElement BuildSheet(SduiNode node)
+    {
+        // Painel modal: renderiza o conteúdo num cartão elevado; visível conforme
+        // Props.Presented. Um host móvel usaria apresentação modal nativa.
+        var content = BuildStack(node, Orientation.Vertical);
+        var card = new Border
+        {
+            Child = content,
+            Background = Brush(ResolveBackground(node.Props) ?? 0xFFFFFFFFu),
+            CornerRadius = new CornerRadius(node.Props?.CornerRadius ?? 12),
+            Padding = new Thickness(16),
+            BorderBrush = Brush(0xE0E0E0FFu),
+            BorderThickness = new Thickness(1),
+            Visibility = node.Props?.Presented == true ? Visibility.Visible : Visibility.Collapsed,
+        };
+        return card;
+    }
+
+    private FrameworkElement BuildAvatar(SduiNode node)
+    {
+        double d = node.Props?.Width ?? node.Props?.Height ?? 40;
+        var initials = new TextBlock
+        {
+            Text = ResolveText(node),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = d * 0.4,
+            Foreground = Brush(ResolveColor(node.Props) ?? 0xFFFFFFFFu),
+        };
+        return new Border
+        {
+            Width = d, Height = d,
+            CornerRadius = new CornerRadius(d / 2),
+            Background = Brush(ResolveBackground(node.Props) ?? 0x8A8A8AFFu),
+            Child = initials,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+    }
+
+    private FrameworkElement BuildChip(SduiNode node)
+    {
+        var tb = new TextBlock
+        {
+            Text = ResolveText(node),
+            FontSize = node.Props?.FontSize ?? 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brush(ResolveColor(node.Props) ?? 0x333333FFu),
+        };
+        return new Border
+        {
+            Child = tb,
+            Padding = new Thickness(10, 4, 10, 4),
+            CornerRadius = new CornerRadius(node.Props?.CornerRadius ?? 14),
+            Background = Brush(ResolveBackground(node.Props) ?? 0xEDEDEDFFu),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+    }
+
+    private FrameworkElement BuildMediaPlaceholder(SduiNode node, string glyph)
+    {
+        // WSL/headless: sem player nativo. Renderiza um cartão com o glifo + src,
+        // provando o mapeamento do nó (o host móvel real usa AVPlayer/MediaElement).
+        var label = new TextBlock
+        {
+            Text = $"{glyph}  {node.Props?.Src ?? node.Media?.Poster ?? ""}".Trim(),
+            Foreground = Brush(0xFFFFFFFFu),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 13,
+        };
+        return new Border
+        {
+            Child = label,
+            Background = Brush(0x202024FFu),
+            CornerRadius = new CornerRadius(node.Props?.CornerRadius ?? 8),
+            MinHeight = node.Props?.Height ?? 120,
+        };
     }
 
     // ── List virtualizada ─────────────────────────────────────────────────────
@@ -341,6 +706,8 @@ public sealed class MabelWindowsBuilder
         Id = n.Id, Type = n.Type, Props = n.Props, Children = n.Children,
         A11y = n.A11y, Fallback = n.Fallback, MinSchemaVersion = n.MinSchemaVersion,
         Responsive = n.Responsive, List = n.List, Nav = n.Nav, Bind = n.Bind,
+        Animation = n.Animation, Media = n.Media, Validation = n.Validation,
+        Tabs = n.Tabs, OnAppear = n.OnAppear, OnDisappear = n.OnDisappear,
         OnTap = null,
     };
 
@@ -428,24 +795,34 @@ public sealed class MabelWindowsBuilder
 
     private string ResolveText(SduiNode node)
     {
+        // 1) binding de linha (List virtualizada) tem precedência.
         if (node.Bind is { } bind && bind.TryGetValue("text", out var key)
             && _row is { } row && row.TryGetValue(key, out var val))
             return val;
+        // 2) i18n: TextKey → tabela do locale ativo (interpolação de TextArgs).
+        if (node.Props?.TextKey is not null)
+        {
+            I18nResolved++;
+            return _l10n.ResolveNode(node.Props) ?? "";
+        }
         return node.Props?.Text ?? "";
     }
 
     // ── Box / size / helpers de estilo ─────────────────────────────────────────
-    private static FrameworkElement Box(SduiProps? props, FrameworkElement child)
+    // Onda 🟡: cores resolvem token de tema → cru (ResolveBackground/BorderColor).
+    private FrameworkElement Box(SduiProps? props, FrameworkElement child)
     {
         if (props is null) return child;
-        bool hasBox = props.Background is not null || props.BorderWidth is not null
+        var bgc = ResolveBackground(props);
+        var bcc = ResolveBorderColor(props);
+        bool hasBox = bgc is not null || props.BorderWidth is not null
                    || props.CornerRadius is not null || props.Padding is not null;
         if (!hasBox) return child;
         var border = new Border { Child = child };
-        if (props.Background is { } bg) border.Background = Brush(bg);
+        if (bgc is { } bg) border.Background = Brush(bg);
         if (props.CornerRadius is { } cr) border.CornerRadius = new CornerRadius(cr);
         if (props.BorderWidth is { } bw) border.BorderThickness = new Thickness(bw);
-        if (props.BorderColor is { } bc) border.BorderBrush = Brush(bc);
+        if (bcc is { } bc) border.BorderBrush = Brush(bc);
         if (props.Padding is { } p) border.Padding = new Thickness(p.Left, p.Top, p.Right, p.Bottom);
         return border;
     }

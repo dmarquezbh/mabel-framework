@@ -35,6 +35,12 @@
     <Content Include="assets\kanban-onda2.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- kanban-onda3.json = descritor v3 (Onda 🟡): theming/dark-mode + i18n +
+         forms/validação + catálogo ampliado (tabbar/grid/avatar/chip/slider/
+         stepper) + media + animação + lifecycle. -->
+    <Content Include="assets\kanban-onda3.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

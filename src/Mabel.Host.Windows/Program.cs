@@ -27,8 +27,11 @@ public static class Program
     {
         bool selftest = args.Contains("--selftest");
         bool onda2 = args.Contains("--onda2");
+        bool onda3 = args.Contains("--onda3");
+        bool dark = args.Contains("--dark");
+        string? locale = LocaleArg(args);
 
-        var jsonPath = LocateDescriptor(args, onda2);
+        var jsonPath = LocateDescriptor(args, onda2, onda3);
         if (jsonPath is null)
         {
             Console.Error.WriteLine("descritor .json nao encontrado (assets/ ao lado do exe).");
@@ -48,6 +51,13 @@ public static class Program
 
         var app = new Application();
         var builder = new MabelWindowsBuilder();
+        // Onda 🟡: tema (claro/escuro) + locale ativos (via flags de CLI).
+        builder.SetDarkMode(dark);
+        if (locale is not null) builder.SetLocale(locale);
+        builder.OnLifecycle = (node, action) =>
+            Console.WriteLine($"[lifecycle] {node.Id} -> {action.Name}");
+        // selftest/screenshot são renders estáticos (sem clock de animação).
+        builder.StaticRender = selftest || ShotPath(args) is not null;
 
         var status = new TextBlock
         {
@@ -168,8 +178,23 @@ public static class Program
         // ── Taps ─────────────────────────────────────────────────────────────
         Console.WriteLine($"botoes de tap : {builder.TapButtons.Count}");
 
-        bool v2 = doc.SchemaVersion >= 2;
-        bool ok = laidOut && (!v2 || (fallbackOk && listOk && navOk));
+        // ── Onda 🟡 (v3): theming + i18n + forms + catálogo ────────────────────
+        bool v3 = doc.SchemaVersion >= 3;
+        Console.WriteLine($"theming       : {builder.ThemeTokensResolved} token(s) de cor resolvidos (dark={builder.PrefersDark})");
+        Console.WriteLine($"i18n          : {builder.I18nResolved} texto(s) localizados");
+        Console.WriteLine($"forms         : {builder.InputsBuilt} input(s) [{string.Join(", ", builder.Inputs.Keys)}]");
+        Console.WriteLine($"animacoes     : {builder.AnimationsApplied} declaradas");
+        Console.WriteLine($"lifecycle     : {builder.LifecycleHooks} hook(s) onAppear/onDisappear");
+        bool v3ok = !v3 || (builder.ThemeTokensResolved > 0 && builder.I18nResolved > 0 && builder.InputsBuilt > 0);
+        if (v3) Console.WriteLine($"v3 funcional  : {(v3ok ? "OK" : "FALTOU (theming/i18n/forms)")}");
+
+        // Estruturais: só exigidos quando o construto está presente no descritor.
+        bool structOk = laidOut
+            && (builder.Nav is null || navOk)
+            && (builder.LastList is null || listOk);
+        // Cenário v2 (onda2): exige o pacote completo fallback+list+nav.
+        bool v2Scenario = doc.SchemaVersion == 2;
+        bool ok = structOk && v3ok && (!v2Scenario || (fallbackOk && listOk && navOk));
         Console.WriteLine(ok ? "SELFTEST PASS" : "SELFTEST FAIL");
         return ok ? 0 : 1;
     }
@@ -222,13 +247,19 @@ public static class Program
         return count;
     }
 
-    private static string? LocateDescriptor(string[] args, bool onda2)
+    private static string? LocaleArg(string[] args)
+    {
+        int i = Array.IndexOf(args, "--locale");
+        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+    }
+
+    private static string? LocateDescriptor(string[] args, bool onda2, bool onda3)
     {
         foreach (var a in args)
             if (a.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && File.Exists(a))
                 return a;
 
-        var name = onda2 ? "kanban-onda2.json" : "kanban-sdui.json";
+        var name = onda3 ? "kanban-onda3.json" : onda2 ? "kanban-onda2.json" : "kanban-sdui.json";
         var candidates = new[]
         {
             Path.Combine(AppContext.BaseDirectory, "assets", name),
