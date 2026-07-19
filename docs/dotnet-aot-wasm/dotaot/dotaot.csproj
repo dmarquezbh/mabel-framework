@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+    <!-- Force a preview1 CORE module (WasmKit-hostable) instead of the default wasip2 component. -->
+    <IlcLlvmTarget>wasm32-unknown-wasip1</IlcLlvmTarget>
+    <!-- lld => plain wasm-ld (core module) AND skips the framework .wit component-type linker args. -->
+    <LinkerFlavor>lld</LinkerFlavor>
+    <!-- Reactor exec-model: export UnmanagedCallersOnly functions, no _start entrypoint required. -->
+    <NativeLib>Shared</NativeLib>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+  </ItemGroup>
+</Project>
