@@ -55,3 +55,7 @@ Package.resolved
 # Device Manager tools (compilados)
 tools/device-manager/.build/
 
+
+# xtool build output
+**/xtool/
+**/.build/
