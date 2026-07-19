@@ -2,9 +2,13 @@
 // world mabel-capabilities — o contrato guest ↔ host para APIs nativas.
 //
 // O guest (app .NET→WASM, sandbox) IMPORTA as capabilities customizadas + as
-// interfaces WASI padrão que o SDK do .NET já provê. O host (shell Swift +
-// WasmKit) provê os imports e chama de volta o export `on-capability-result`
-// para entregar resultados assíncronos.
+// interfaces WASI padrão que o SDK do .NET já provê. O host provê os imports e
+// chama de volta o export `on-capability-result` para entregar resultados async.
+//
+// Contrato PLATFORM-NEUTRAL: dois hosts co-iguais consomem este mesmo WIT —
+// shell Swift (WasmKit, interpretado) no iOS e shell Kotlin/Java (wasmtime-JNI
+// ou Chicory, com JIT) no Android. O guest é o mesmo binário nos dois; o runtime
+// WASM e a API nativa são detalhe interno de cada host. Ver docs §3.1 e §5.
 //
 // ── Divisão WASI-padrão vs custom (detalhe em docs/capabilities-abi.md) ──
 //   REUSA WASI padrão (o wasi-wasm workload do .NET já linka): filesystem,
