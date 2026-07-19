@@ -204,6 +204,22 @@ work is to give the .NET guest a capability ABI that imports *Mabel* functions r
 `wasi:*`, e.g. via `[DllImport("mabel")]` + `[WasmImportLinkage]` (see runtimelab
 `compiling.md` → "WebAssembly module imports").
 
+## Next step (roadmap follow-up, post-consolidation — NOT now)
+
+Give the .NET guest a **capability ABI** that imports *Mabel* host functions instead of
+`wasi:*`, so instantiation needs no stubs and the guest calls real host capabilities:
+
+```csharp
+[WasmImportLinkage]
+[DllImport("mabel", EntryPoint = "render_node")]
+static extern int RenderNode(int nodePtr, int len);
+```
+
+This is the link that turns ".NET runs under WasmKit" into ".NET-live-iOS for real":
+the host (Mabel) supplies the imports = capabilities, exactly the model proven here with
+no-op stubs. Deferred deliberately — machine is loaded and this is roadmap work, not part
+of the current consolidated docs PR.
+
 ## Reproduce
 
 Working sample committed under [`docs/dotnet-aot-wasm/`](./dotnet-aot-wasm/):
