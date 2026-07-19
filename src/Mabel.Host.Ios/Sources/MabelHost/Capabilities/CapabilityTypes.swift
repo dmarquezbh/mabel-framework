@@ -17,11 +17,17 @@ public struct CaptureOptions: Codable {
     public var facing: CameraFacing
     public var quality: Float
     public var allowEdit: Bool
+    public init(kind: MediaKind, facing: CameraFacing, quality: Float, allowEdit: Bool) {
+        self.kind = kind; self.facing = facing; self.quality = quality; self.allowEdit = allowEdit
+    }
 }
 
 public struct PickerOptions: Codable {
     public var kind: MediaKind
     public var maxItems: UInt32
+    public init(kind: MediaKind, maxItems: UInt32) {
+        self.kind = kind; self.maxItems = maxItems
+    }
 }
 
 /// Metadados + handle do asset capturado/selecionado (bytes lidos via read-asset).
@@ -54,6 +60,9 @@ public struct Position: Codable {
 public struct NotificationTrigger: Codable {
     public var afterSeconds: UInt32?
     public var atTimeMs: UInt64?
+    public init(afterSeconds: UInt32?, atTimeMs: UInt64?) {
+        self.afterSeconds = afterSeconds; self.atTimeMs = atTimeMs
+    }
 }
 
 public struct LocalNotification: Codable {
@@ -63,6 +72,10 @@ public struct LocalNotification: Codable {
     public var sound: String?
     public var badge: UInt32?
     public var trigger: NotificationTrigger
+    public init(id: String, title: String, body: String, sound: String?, badge: UInt32?, trigger: NotificationTrigger) {
+        self.id = id; self.title = title; self.body = body
+        self.sound = sound; self.badge = badge; self.trigger = trigger
+    }
 }
 
 // ── Biometrics ────────────────────────────────────────────────────────────────
@@ -81,6 +94,9 @@ public enum SecureAccessibility: String, Codable {
 public struct SecurePutOptions: Codable {
     public var accessibility: SecureAccessibility
     public var requireUserPresence: Bool
+    public init(accessibility: SecureAccessibility, requireUserPresence: Bool) {
+        self.accessibility = accessibility; self.requireUserPresence = requireUserPresence
+    }
 }
 
 // ── Share ───────────────────────────────────────────────────────────────────────
@@ -91,6 +107,9 @@ public struct ShareItem: Codable {
     public var url: String?
     public var assetId: String?
     public var blob: ShareBlob?
+    public init(text: String? = nil, url: String? = nil, assetId: String? = nil, blob: ShareBlob? = nil) {
+        self.text = text; self.url = url; self.assetId = assetId; self.blob = blob
+    }
 }
 
 public struct ShareBlob: Codable {
@@ -105,6 +124,9 @@ public struct ShareBlob: Codable {
 public struct BleScanFilter: Codable {
     public var serviceUuids: [String]
     public var allowDuplicates: Bool
+    public init(serviceUuids: [String], allowDuplicates: Bool) {
+        self.serviceUuids = serviceUuids; self.allowDuplicates = allowDuplicates
+    }
 }
 
 public struct BleAdvertisement: Codable {

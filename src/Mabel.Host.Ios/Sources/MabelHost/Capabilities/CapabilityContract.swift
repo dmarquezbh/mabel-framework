@@ -14,7 +14,7 @@ import Foundation
 
 /// Resultado de uma operação. Valores estáveis (parte da ABI; casam com
 /// `cap-status` no WIT e `CapStatus` no C#). Int32 = o tipo do wire.
-public enum CapStatus: Int32 {
+public enum CapStatus: Int32, Error {
     case ok = 0
     case permissionDenied = 1
     /// Capability não declarada no manifesto — host recusa sem tocar o SO.
