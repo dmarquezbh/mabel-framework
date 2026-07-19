@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "root": {
+    "id": "screen:board",
+    "type": 1,
+    "props": { "background": 4179673343 },
+    "children": [
+      {
+        "id": "scroll:board",
+        "type": 4,
+        "props": { "axis": 1, "padding": { "top": 12, "right": 12, "bottom": 16, "left": 12 } },
+        "children": [
+          {
+            "id": "groups",
+            "type": 3,
+            "props": { "spacing": 18, "align": 3 },
+            "children": [
+              {
+                "id": "group:ORIGINACAO",
+                "type": 2,
+                "props": { "spacing": 4, "data": { "nome": "ORIGINAÇÃO" } },
+                "children": [
+                  { "id": "group:ORIGINACAO/head", "type": 7,
+                    "props": { "text": "ORIGINAÇÃO", "fontSize": 10.5, "weight": 2, "color": 439089663 } },
+                  {
+                    "id": "columns:ORIGINACAO",
+                    "type": 3,
+                    "props": { "spacing": 8, "align": 0 },
+                    "children": [
+                      {
+                        "id": "column:ORIGINACAO/Cadastro",
+                        "type": 5,
+                        "props": {
+                          "axis": 0, "width": 260, "spacing": 6, "cornerRadius": 10,
+                          "background": 4294967295, "borderColor": 3991793663, "borderWidth": 1,
+                          "data": { "grupo": "ORIGINAÇÃO", "etapa": "Cadastro", "count": "2" }
+                        },
+                        "children": [
+                          {
+                            "id": "card:50231",
+                            "type": 6,
+                            "onTap": { "name": "open-card", "args": { "id": "50231" } },
+                            "props": {
+                              "cornerRadius": 6, "background": 4294967295,
+                              "borderColor": 1329806079, "borderWidth": 2,
+                              "padding": { "top": 8, "right": 12, "bottom": 8, "left": 14 },
+                              "spacing": 8,
+                              "data": {
+                                "idPjus": "50231", "credor": "Construtora ÁlAn S.",
+                                "codigo": "TAB-2291", "valor": "R$ 1.2M", "esfera": "FED",
+                                "prog": "2/5", "prioritaria": "1", "fluxo": "padrao"
+                              }
+                            },
+                            "children": [
+                              { "id": "card:50231/row1", "type": 3, "props": { "spacing": 6 }, "children": [
+                                { "id": "card:50231/idbadge", "type": 10,
+                                  "props": { "text": "50231", "fontSize": 9.5, "color": 30556159, "background": 3874324223, "cornerRadius": 3 } },
+                                { "id": "card:50231/credor", "type": 7, "props": { "text": "Construtora ÁlAn S.", "fontSize": 11.5, "flex": 1, "color": 439089663 } },
+                                { "id": "card:50231/codigo", "type": 7, "props": { "text": "TAB-2291", "fontSize": 10.5, "color": 1823502591 } }
+                              ] },
+                              { "id": "card:50231/row2", "type": 3, "props": { "spacing": 6, "align": 1 }, "children": [
+                                { "id": "card:50231/data", "type": 10, "props": { "text": "Jun. 12", "fontSize": 10.5, "background": 4042322175, "cornerRadius": 10 } },
+                                { "id": "card:50231/prog", "type": 11, "props": { "value": 0.4, "flex": 1, "color": 30556159 } },
+                                { "id": "card:50231/ativ", "type": 7, "props": { "text": "2/5", "fontSize": 10.5, "color": 1213155327 } }
+                              ] },
+                              { "id": "card:50231/row3", "type": 3, "props": { "spacing": 6, "align": 1 }, "children": [
+                                { "id": "card:50231/valor", "type": 7, "props": { "text": "R$ 1.2M", "fontSize": 13, "weight": 2, "color": 439089663 } },
+                                { "id": "card:50231/esfera", "type": 10, "props": { "text": "FED", "fontSize": 9.5, "background": 4179673343, "cornerRadius": 3 } },
+                                { "id": "card:50231/prio", "type": 10, "props": { "text": "★ Prioritária", "fontSize": 9, "background": 4294934753, "cornerRadius": 3 } }
+                              ] }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
