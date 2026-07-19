@@ -1,0 +1,39 @@
+// =============================================================================
+// biometrics — Face ID / Touch ID.
+//
+// iOS: LocalAuthentication (LAContext.evaluatePolicy). A biometria NUNCA sai do
+// Secure Enclave — o guest só recebe um veredito booleano (autenticou ou não).
+// Nenhum dado biométrico cruza a fronteira do sandbox. Funciona na conta FREE
+// (só exige NSFaceIDUsageDescription no Info.plist).
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface biometrics {
+    use types.{request-id, cap-status};
+
+    enum biometry-kind {
+        none,
+        touch-id,
+        face-id,
+        optic-id,
+    }
+
+    /// Qual biometria o device tem (síncrono; não autentica).
+    available: func() -> biometry-kind;
+
+    /// Política de avaliação.
+    enum policy {
+        /// Só biometria (LAPolicy.deviceOwnerAuthenticationWithBiometrics).
+        biometrics-only,
+        /// Biometria com fallback pra senha/PIN do device
+        /// (LAPolicy.deviceOwnerAuthentication).
+        biometrics-or-passcode,
+    }
+
+    /// Pede autenticação. `reason` é a string mostrada no prompt do SO
+    /// (obrigatória no iOS). Resolve em `on-capability-result` com `payload` =
+    /// 1 byte (1 = autenticado, 0 = falhou). Cancelamento/negação vêm no
+    /// cap-status (cancelled / permission-denied).
+    authenticate: func(request-id: request-id, reason: string, policy: policy) -> cap-status;
+}
