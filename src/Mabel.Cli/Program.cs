@@ -1,4 +1,5 @@
 using Mabel.Core.Domain;
+using Mabel.Core.Features.Apple;
 using Mabel.Core.Features.Deploy;
 using Mabel.Core.Features.Devices;
 using Mabel.Core.Features.Doctor;
@@ -29,6 +30,7 @@ return args[0].ToLowerInvariant() switch
     "deploy"  => RunDeploy(args),
     "live"     => RunLive(args),
     "devices"  => RunDevices(),
+    "apple"    => RunApple(args),
     "usb-help" => RunUsbHelp(args),
     "version" or "--version" or "-v" => PrintVersion(),
     "help" or "--help" or "-h"      => PrintUsage(),
@@ -201,6 +203,65 @@ int RunLive(string[] args)
     return server.RunAsync(cts.Token).GetAwaiter().GetResult();
 }
 
+
+int RunApple(string[] args)
+{
+    Ansi.Header("mabel apple");
+
+    if (args.Length < 2 || args[1].ToLowerInvariant() != "devices")
+    {
+        Ansi.Info("Usage: mabel apple devices [list | enable <id> | disable <id>]");
+        return args.Length < 2 ? 0 : 1;
+    }
+
+    var apple = new AppleDevices(shell);
+
+    if (!apple.XtoolAvailable())
+    {
+        Ansi.Error($"xtool not found ({AppleDevices.ResolveXtool()}).");
+        Ansi.Info("Install xtool, or point MABEL_XTOOL at a custom build/wrapper.");
+        return 1;
+    }
+
+    var action = args.Length >= 3 ? args[2].ToLowerInvariant() : "list";
+    switch (action)
+    {
+        case "list":
+            return apple.List();
+
+        case "enable" or "disable":
+            if (args.Length < 4)
+            {
+                Ansi.Error($"Usage: mabel apple devices {action} <device-id>");
+                Ansi.Info("Get the device id from: mabel apple devices list");
+                return 1;
+            }
+            if (!apple.SupportsSetStatus())
+            {
+                Ansi.Error("This xtool build does not support 'ds devices set-status'.");
+                Ansi.Info("Build the patched xtool (docs/gerenciar-devices-apple-xtool.md)");
+                Ansi.Info("and point MABEL_XTOOL at it (full command prefix is allowed).");
+                return 1;
+            }
+            var result = apple.SetStatus(args[3], enabled: action == "enable");
+            if (result.Success)
+            {
+                Ansi.Success(result.Message);
+                if (action == "disable") Ansi.Info("Slot freed — Apple has no device delete; DISABLED frees the quota.");
+            }
+            else
+            {
+                Ansi.Error(result.Message.Length > 0 ? result.Message : "set-status failed.");
+            }
+            return result.Success ? 0 : 1;
+
+        default:
+            Ansi.Error($"Unknown action: {action}");
+            Ansi.Info("Usage: mabel apple devices [list | enable <id> | disable <id>]");
+            return 1;
+    }
+}
+
 int RunDevices()
 {
     Ansi.Header("mabel devices");
@@ -295,6 +356,7 @@ int PrintUsage()
     Console.WriteLine($"    {"deploy",-12} Build and run on a device/emulator");
     Console.WriteLine($"    {"live",-12}   Start hot reload dev server (Mabel Live)");
     Console.WriteLine($"    {"devices",-12}List connected devices");
+    Console.WriteLine($"    {"apple",-12}  Manage Apple Developer account devices");
     Console.WriteLine($"    {"usb-help",-12}USB setup guide for physical devices");
     Console.WriteLine($"    {"version",-12}Show version");
     Console.WriteLine();
