@@ -1,0 +1,48 @@
+// =============================================================================
+// location — GPS / localização.
+//
+// iOS: CoreLocation (CLLocationManager). Consentimento em dois níveis:
+// when-in-use vs always. O Mabel v2 só expõe when-in-use (always exige
+// UIBackgroundModes + justificativa de review e é raramente necessário num app
+// SDUI em foreground). Ver mapa iOS em docs/capabilities-abi.md.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface location {
+    use types.{request-id, cap-status};
+
+    enum accuracy {
+        /// ~3km — cidade. Barato em bateria.
+        coarse,
+        /// ~100m — bairro.
+        balanced,
+        /// melhor possível (GPS). Caro em bateria.
+        precise,
+    }
+
+    /// Uma leitura de posição. Timestamp em epoch ms (host converte do relógio
+    /// do device; guest exibe no fuso local).
+    record position {
+        latitude: f64,
+        longitude: f64,
+        /// Raio de incerteza horizontal em metros.
+        accuracy-m: f64,
+        altitude-m: option<f64>,
+        heading-deg: option<f64>,
+        speed-mps: option<f64>,
+        timestamp-ms: u64,
+    }
+
+    /// Uma leitura única (one-shot). Resolve em `on-capability-result`
+    /// (capability = location) com `payload` = position (JSON).
+    get-current: func(request-id: request-id, desired: accuracy) -> cap-status;
+
+    /// Inicia atualizações contínuas. Cada nova posição chega como um callback
+    /// `on-capability-result` separado com o MESMO request-id (stream lógico).
+    /// O guest para com `stop-updates`.
+    start-updates: func(request-id: request-id, desired: accuracy) -> cap-status;
+
+    /// Encerra o stream iniciado por `start-updates`.
+    stop-updates: func(request-id: request-id);
+}

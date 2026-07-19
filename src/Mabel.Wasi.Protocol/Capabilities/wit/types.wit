@@ -1,0 +1,81 @@
+// =============================================================================
+// mabel:capabilities — tipos compartilhados.
+//
+// Estas interfaces WIT são o CONTRATO SEMÂNTICO (north star, estilo Component
+// Model / WASI-flavored). Elas descrevem o que cada capability faz de forma
+// tipada e platform-agnostic.
+//
+// ⚠️ IMPORTANTE — lowering real hoje: o stack atual (guest = .NET → WASI
+// Preview 1 core module; host = WasmKit em Swift) NÃO tem Component Model
+// nem async/futures de p2 sólidos nas duas pontas. Então este WIT NÃO é
+// compilado por wit-bindgen ainda; ele é "achatado" à mão em funções de
+// core-module (ver CapabilityContract.cs e docs/capabilities-abi.md), do mesmo
+// jeito que Protocol.cs (semântico) ↔ WasiContract.cs (nomes de função core).
+//
+// A assincronia é modelada aqui como resultado ENTREGUE POR CALLBACK
+// (request-id + on-capability-result), não como future do Component Model.
+// Ver ADR 0002 para a justificativa.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface types {
+    /// Correlaciona uma chamada assíncrona do guest com o callback de resultado
+    /// que o host dispara depois. Único por chamada, gerado pelo guest.
+    type request-id = u64;
+
+    /// Resultado de qualquer operação de capability (síncrono ou no callback).
+    enum cap-status {
+        /// Sucesso. `payload` carrega os dados (se houver).
+        ok,
+        /// O usuário (ou a policy do SO) negou a permissão em runtime.
+        permission-denied,
+        /// Capability não declarada no manifesto do app, ou host não a liga.
+        not-authorized,
+        /// Recurso indisponível neste device/OS (ex.: sem câmera, sem GPS).
+        unavailable,
+        /// O usuário cancelou (fechou o picker, cancelou o Face ID).
+        cancelled,
+        /// Estourou o tempo limite antes de resolver.
+        timeout,
+        /// Falha genérica; `payload` pode conter uma mensagem de erro (UTF-8).
+        error,
+    }
+
+    /// Status de autorização de uma capability que exige consentimento do SO.
+    /// Espelha o modelo iOS (CoreLocation/AVFoundation/UNAuthorizationStatus).
+    enum permission-state {
+        /// Ainda não perguntado. Uma chamada dispara o prompt do SO.
+        not-determined,
+        /// Concedido pelo usuário.
+        granted,
+        /// Negado; o app deve mandar o usuário aos Ajustes do SO.
+        denied,
+        /// Bloqueado por policy/MDM/controle parental; não há prompt possível.
+        restricted,
+    }
+
+    /// Identifica cada capability para roteamento no callback achatado e no
+    /// manifesto. Valor estável (parte da ABI).
+    enum capability-id {
+        camera,
+        photo-library,
+        location,
+        notifications,
+        biometrics,
+        secure-storage,
+        share,
+        clipboard,
+        haptics,
+    }
+
+    /// Envelope entregue no callback de resultado. `payload` é opaco por
+    /// capability (a interface tipada abaixo diz como interpretá-lo);
+    /// no wire achatado vira JSON/bytes em memória linear.
+    record cap-result {
+        request-id: request-id,
+        capability: capability-id,
+        status: cap-status,
+        payload: option<list<u8>>,
+    }
+}

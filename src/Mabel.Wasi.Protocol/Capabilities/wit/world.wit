@@ -1,0 +1,53 @@
+// =============================================================================
+// world mabel-capabilities — o contrato guest ↔ host para APIs nativas.
+//
+// O guest (app .NET→WASM, sandbox) IMPORTA as capabilities customizadas + as
+// interfaces WASI padrão que o SDK do .NET já provê. O host (shell Swift +
+// WasmKit) provê os imports e chama de volta o export `on-capability-result`
+// para entregar resultados assíncronos.
+//
+// ── Divisão WASI-padrão vs custom (detalhe em docs/capabilities-abi.md) ──
+//   REUSA WASI padrão (o wasi-wasm workload do .NET já linka): filesystem,
+//   clocks, random, sockets/http, cli/stdio+environment. NÃO reimplementamos.
+//   CUSTOM (WASI não tem): câmera, galeria, GPS, notificações, biometria,
+//   secure-storage, share, clipboard, haptics — as interfaces deste pacote.
+//
+// ── Assincronia (ADR 0002) ──
+//   Sem futures do Component Model (WasmKit/componentize-dotnet não têm p2
+//   sólido). Padrão = request-id + callback: o guest chama import(request-id,…)
+//   que retorna JÁ (aceito/negado); o trabalho nativo roda async; o host chama
+//   o export on-capability-result(request-id,…) quando termina.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+world mabel-capabilities {
+    // ── Interfaces WASI padrão que o guest também usa (providas pelo SDK) ──
+    // Declaradas como referência do contrato; o runtime as satisfaz via WASI p1.
+    //   import wasi:filesystem/types@0.2.x;
+    //   import wasi:clocks/wall-clock@0.2.x;
+    //   import wasi:random/random@0.2.x;
+    //   import wasi:sockets/tcp@0.2.x;   // ou wasi:http/outgoing-handler
+    //   import wasi:cli/environment@0.2.x;
+    // (comentadas: no lowering p1 atual elas entram pelos imports wasi_snapshot
+    //  padrão, não por este world.)
+
+    // ── Capabilities CUSTOM importadas pelo guest ──
+    import types;
+    import permissions;
+    import camera;
+    import location;
+    import notifications;
+    import biometrics;
+    import secure-storage;
+    import share;
+    import clipboard;
+    import haptics;
+
+    // ── Export do guest: callback ÚNICO de resultado assíncrono ──
+    // O host chama isto para entregar o resultado de qualquer chamada async
+    // (câmera, GPS, permissão, biometria, share…). O guest despacha por
+    // request-id + capability. Um único ponto de entrada mantém o wire simples
+    // e casa com o lowering achatado (ver CapabilityContract.OnCapabilityResult).
+    export on-capability-result: func(result: types.cap-result);
+}
