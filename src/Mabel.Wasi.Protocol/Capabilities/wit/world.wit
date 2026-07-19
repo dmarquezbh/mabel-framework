@@ -14,11 +14,16 @@
 //   REUSA WASI padrão (o wasi-wasm workload do .NET já linka): filesystem,
 //   clocks, random, sockets/http, cli/stdio+environment. NÃO reimplementamos.
 //   CUSTOM (WASI não tem): câmera, galeria, GPS, notificações, biometria,
-//   secure-storage, share, clipboard, haptics — as interfaces deste pacote.
+//   secure-storage, share, clipboard, haptics, bluetooth (BLE) — as interfaces
+//   deste pacote.
 //
-// ── Assincronia (ADR 0002) ──
+// ── Assincronia (ADR 0002 one-shot; ADR 0003 stream) ──
 //   Sem futures do Component Model (WasmKit/componentize-dotnet não têm p2
-//   sólido). Padrão = request-id + callback: o guest chama import(request-id,…)
+//   sólido). Dois padrões achatados sobre core-module p1:
+//   • ONE-SHOT: request-id + on-capability-result (uma chamada → um resultado).
+//   • STREAM:   subscription-id + on-capability-event (N eventos) + unsubscribe.
+//   Segue a descrição do one-shot abaixo; o stream é irmão dele.
+//   Padrão = request-id + callback: o guest chama import(request-id,…)
 //   que retorna JÁ (aceito/negado); o trabalho nativo roda async; o host chama
 //   o export on-capability-result(request-id,…) quando termina.
 // =============================================================================
@@ -39,6 +44,7 @@ world mabel-capabilities {
     // ── Capabilities CUSTOM importadas pelo guest ──
     import types;
     import permissions;
+    import streaming;
     import camera;
     import location;
     import notifications;
@@ -47,11 +53,18 @@ world mabel-capabilities {
     import share;
     import clipboard;
     import haptics;
+    import bluetooth;
 
-    // ── Export do guest: callback ÚNICO de resultado assíncrono ──
+    // ── Export do guest: callback ÚNICO de resultado ONE-SHOT ──
     // O host chama isto para entregar o resultado de qualquer chamada async
-    // (câmera, GPS, permissão, biometria, share…). O guest despacha por
-    // request-id + capability. Um único ponto de entrada mantém o wire simples
-    // e casa com o lowering achatado (ver CapabilityContract.OnCapabilityResult).
+    // (câmera, GPS one-shot, permissão, biometria, share, connect BLE…). O guest
+    // despacha por request-id + capability. Um único ponto de entrada mantém o
+    // wire simples e casa com o lowering achatado (CapabilityContract.OnCapabilityResult).
     export on-capability-result: func(result: types.cap-result);
+
+    // ── Export do guest: callback de EVENTO de STREAM (ADR 0003) ──
+    // O host chama isto N vezes por assinatura ativa (scan BLE, notify de
+    // característica, GPS contínuo, notificações recebidas…), até o guest chamar
+    // streaming.unsubscribe. Roteado por subscription-id + capability + event-kind.
+    export on-capability-event: func(event: types.cap-event);
 }

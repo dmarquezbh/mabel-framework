@@ -67,6 +67,7 @@ interface types {
         share,
         clipboard,
         haptics,
+        bluetooth,
     }
 
     /// Envelope entregue no callback de resultado. `payload` é opaco por
@@ -76,6 +77,26 @@ interface types {
         request-id: request-id,
         capability: capability-id,
         status: cap-status,
+        payload: option<list<u8>>,
+    }
+
+    // ── STREAMING / SUBSCRIPTION (ADR 0003) ─────────────────────────────────────
+    // O par request-id/cap-result acima é ONE-SHOT (uma chamada → um resultado).
+    // Eventos CONTÍNUOS (scan BLE, notificações de característica, GPS contínuo,
+    // sensores) usam este outro par: subscription-id + cap-event, entregue N vezes
+    // no export `on-capability-event` até o guest chamar `streaming.unsubscribe`.
+
+    /// Correlaciona uma assinatura do guest com o fluxo de eventos que o host
+    /// empurra. Espaço de id SEPARADO do request-id (one-shot). Gerado pelo guest.
+    type subscription-id = u64;
+
+    /// Um evento de stream. `event-kind` discrimina o tipo DENTRO da capability
+    /// (ex.: BLE 0=device-found, 1=characteristic-changed, 2=connection-changed);
+    /// a semântica é definida por cada capability. `payload` é opaco (JSON/bytes).
+    record cap-event {
+        subscription: subscription-id,
+        capability: capability-id,
+        event-kind: u32,
         payload: option<list<u8>>,
     }
 }

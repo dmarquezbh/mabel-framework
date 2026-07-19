@@ -10,7 +10,7 @@
 package mabel:capabilities@0.2.0;
 
 interface notifications {
-    use types.{request-id, cap-status};
+    use types.{request-id, subscription-id, cap-status};
 
     /// Gatilho da notificação local.
     variant trigger {
@@ -41,4 +41,12 @@ interface notifications {
 
     /// Cancela todas as pendentes deste app.
     cancel-all: func();
+
+    /// STREAM (padrão subscription do ADR 0003): observa INTERAÇÕES com
+    /// notificações deste app — usuário tocou, ou uma chegou com o app aberto.
+    /// Eventos em `on-capability-event` (event-kind=0=tapped, 1=received-foreground;
+    /// payload = id da notificação, UTF-8). Pare com `streaming.unsubscribe`.
+    /// (iOS: UNUserNotificationCenterDelegate; Android: callback do
+    /// NotificationManager / intent do tap.)
+    subscribe-received: func(subscription: subscription-id) -> cap-status;
 }

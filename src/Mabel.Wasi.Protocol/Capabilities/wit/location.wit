@@ -10,7 +10,7 @@
 package mabel:capabilities@0.2.0;
 
 interface location {
-    use types.{request-id, cap-status};
+    use types.{request-id, subscription-id, cap-status};
 
     enum accuracy {
         /// ~3km — cidade. Barato em bateria.
@@ -34,15 +34,14 @@ interface location {
         timestamp-ms: u64,
     }
 
-    /// Uma leitura única (one-shot). Resolve em `on-capability-result`
+    /// Uma leitura única (ONE-SHOT). Resolve em `on-capability-result`
     /// (capability = location) com `payload` = position (JSON).
     get-current: func(request-id: request-id, desired: accuracy) -> cap-status;
 
-    /// Inicia atualizações contínuas. Cada nova posição chega como um callback
-    /// `on-capability-result` separado com o MESMO request-id (stream lógico).
-    /// O guest para com `stop-updates`.
-    start-updates: func(request-id: request-id, desired: accuracy) -> cap-status;
-
-    /// Encerra o stream iniciado por `start-updates`.
-    stop-updates: func(request-id: request-id);
+    /// Atualizações contínuas (STREAM — padrão subscription do ADR 0003). Cada
+    /// nova posição chega em `on-capability-event` (event-kind=0, payload =
+    /// position JSON). Pare com `streaming.unsubscribe(sub-id)`.
+    /// (Substitui o antigo start-updates/stop-updates ad-hoc: agora location é
+    /// um consumidor do mesmo mecanismo genérico de stream que o bluetooth.)
+    subscribe-updates: func(subscription: subscription-id, desired: accuracy) -> cap-status;
 }

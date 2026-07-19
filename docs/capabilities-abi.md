@@ -13,7 +13,7 @@ que o host chama). O canal de render já existe assim: `Protocol.cs` (modelo sem
 ↔ `WasiContract.cs` (nomes de função core `draw_rect`, `draw_text`…).
 
 Este documento é o **irmão do render** para o resto do device: câmera, GPS, notificações,
-biometria, keychain, share, clipboard, haptics. Modelo = **capability-based, estilo
+biometria, keychain, share, clipboard, haptics, **bluetooth (BLE)**. Modelo = **capability-based, estilo
 WASI / Component Model**: o guest só recebe a autoridade que o app **declara** num
 manifesto; o host media tudo.
 
@@ -29,22 +29,25 @@ Arquivos deste design:
 ```
 src/Mabel.Wasi.Protocol/Capabilities/
   wit/                        # contrato semântico (north star, Component Model)
-    world.wit                 # world mabel-capabilities (imports + o export callback)
-    types.wit                 # request-id, cap-status, permission-state, capability-id
+    world.wit                 # world mabel-capabilities (imports + exports de callback)
+    types.wit                 # request-id, subscription-id, cap-status, cap-result, cap-event
     permissions.wit           # check (sync) + request (async)
+    streaming.wit             # unsubscribe genérico (padrão stream, ADR 0003)
     camera.wit                # câmera + galeria + read-asset em chunks
-    location.wit              # GPS one-shot + stream
-    notifications.wit         # notificação LOCAL (push fica de fora — ver §5)
+    location.wit              # GPS one-shot + stream (subscribe-updates)
+    notifications.wit         # notificação LOCAL + stream de recebidas (push fica de fora)
     biometrics.wit            # Face/Touch ID (veredito booleano)
     secure-storage.wit        # Keychain por-app (kv)
     share.wit                 # UIActivityViewController
     clipboard.wit             # UIPasteboard
     haptics.wit               # feedback tátil (fire-and-forget)
+    bluetooth.wit             # BLE central: one-shot (connect/read/write) + stream (scan/notify)
   CapabilityContract.cs       # lowering ACHATADO p/ core-module (irmão de WasiContract.cs)
   CapabilityManifest.cs       # modelo do manifesto (irmão de SduiDocument)
 docs/
   capabilities-abi.md         # este doc
-  adr/0002-capabilities-abi.md
+  adr/0002-capabilities-abi.md  # ABI base: WIT+core, one-shot async, segurança, free-gating
+  adr/0003-capability-streams.md # padrão stream/subscription (motivado pelo bluetooth)
 ```
 
 ## 2. Split: WASI padrão vs. custom
@@ -69,7 +72,7 @@ delegar ao host. **Fora do escopo deste design** (é rede, não device API).
 (mesma gramática WIT, mesmo estilo de tipos), mas fora do namespace `wasi:` —
 `package mabel:capabilities`. Cobrem exatamente o que o SO oferece e o WASI não
 padroniza: **câmera, galeria, GPS, notificações locais, biometria, secure-storage,
-share sheet, clipboard, haptics.**
+share sheet, clipboard, haptics, bluetooth (BLE).**
 
 ## 3. Assincronia — request-id + callback (decidido; ADR 0002)
 
@@ -99,8 +102,8 @@ guest                              host (Swift/WasmKit)
   normal pro dev do app, apesar do wire ser callback.
 - **Um único export de callback** (`mabel_on_capability_result`) em vez de um por
   capability: wire mínimo, casa com o lowering achatado.
-- **Streams** (GPS contínuo) reusam o mesmo `request-id` em múltiplos callbacks até
-  `stop-updates`.
+- **Eventos contínuos** (scan BLE, GPS contínuo, notify de característica) NÃO usam este
+  one-shot — têm o padrão **stream/subscription** próprio (§3.2, ADR 0003).
 - **Ownership de memória do payload:** host chama o export `cap_alloc` do guest,
   escreve os bytes, passa `(ptr,len)`; guest lê e chama `cap_free`. (Detalhe em
   `CapabilityContract.cs`.)
@@ -126,12 +129,58 @@ difere pela política de cada SO:
 |------------|------|--------------------------------------------------------|------|
 | **iOS**    | ❌ proibido (sem memória executável gravável p/ apps de 3º) | **WasmKit** (interpretador, Swift puro) | Único caminho viável; sem AOT/JIT. Perf = interpretador. |
 | **Android**| ✅ permitido | **wasmtime via JNI** (Cranelift JIT/AOT) — o mais rápido; **Chicory** (puro-Java, interpretador) como fallback sem NDK | Pode usar JIT → guest roda bem mais rápido que no iOS. |
+| **Desktop** (Win/Linux/macOS) | ✅ permitido | **wasmtime** (nativo, Cranelift) | Sem restrição de JIT; runtime desktop é o mais simples. Alvo em maturação (task desktop). |
 
 Isso **não vaza pro contrato**: WIT, manifesto e os nomes de função core são idênticos.
 O host Android é um projeto separado (`Mabel.Host.Android`, Kotlin/Java) do host iOS, mas
 os dois implementam a mesma ABI. A escolha de runtime é interna ao host — o guest não sabe
 nem se importa. (No iOS, a perf de interpretador do WasmKit é o motivo extra pra manter
 payloads pequenos e mídia via `read-asset` em chunks, não despejada na memória linear.)
+
+### 3.2 Padrão STREAM / subscription (decidido; ADR 0003)
+
+O `request-id + callback` da §3 é **one-shot**: uma chamada → um resultado. Não cobre
+**eventos contínuos** — scan BLE achando devices, uma característica BLE notificando,
+GPS empurrando posições, notificações sendo tocadas. O **bluetooth expôs essa lacuna**.
+
+Padrão adicional — **subscription** (coexiste com o one-shot):
+
+```
+guest                                   host
+  │ ble_start_scan(subId, filter) ──────────►│  liga o scanner nativo
+  │◄──────── CapStatus.Ok (aceito) ──────────│  (retorna já)
+  │◄─ on_capability_event(subId, BLE, 0, …) ─│  device A encontrado
+  │◄─ on_capability_event(subId, BLE, 0, …) ─│  device B encontrado
+  │◄─ on_capability_event(subId, BLE, 0, …) ─│  device A de novo (RSSI vivo)
+  │ cap_unsubscribe(subId) ─────────────────►│  desliga o scanner, libera recurso
+```
+
+- Guest gera `subscription-id` (u64, espaço **separado** do request-id) e guarda um
+  handler/canal (`IObservable`/`Channel<T>` no .NET). Eventos chegam no **segundo export
+  único** `on_capability_event(subId, capability, event-kind, payload)`; o guest despacha
+  por `subId`. `event-kind` discrimina o tipo dentro da capability (BLE: 0=device-found,
+  1=characteristic-changed, 2=connection-changed).
+- **Cancelamento genérico:** `streaming.unsubscribe(subId)` (uma função só) derruba
+  qualquer stream; o host mapeia `subId → capability + recurso nativo` e faz o teardown.
+- **Ownership de memória** = igual ao one-shot (`cap_alloc`/`cap_free`).
+
+**Quais capabilities são one-shot, stream, ou os dois:**
+
+| Capability      | One-shot                                   | Stream (subscription)                          |
+|-----------------|--------------------------------------------|------------------------------------------------|
+| camera / photo  | ✅ capture / pick                          | —                                              |
+| location        | ✅ get-current                             | ✅ subscribe-updates (GPS contínuo)            |
+| notifications   | ✅ schedule                                | ✅ subscribe-received (tap/recebida)           |
+| biometrics      | ✅ authenticate                            | —                                              |
+| secure-storage  | ✅ (síncrono)                              | —                                              |
+| share/clipboard/haptics | ✅ (síncrono/one-shot)             | —                                              |
+| **bluetooth**   | ✅ connect, discover, read, write          | ✅ start-scan, subscribe-characteristic, subscribe-connection |
+| *(futuro)* sensores, áudio-frames | —                        | ✅ (reusam o mesmo mecanismo, sem mudar a ABI) |
+
+**Por que não streams/futures do Component Model (`wasi:io/streams`, `wasi:io/poll`):**
+mesma razão do one-shot (§3, ADR 0002) — exigem Component Model + p2 nas duas pontas, que
+o stack não tem hoje. O callback de stream é a via achatada sobre core-module p1; migrar
+pra streams p2 depois troca só o lowering. **Ver ADR 0003.**
 
 ## 4. Segurança capability-based (duas camadas)
 
@@ -206,13 +255,25 @@ API nativa iOS + gate de build (entitlement/Info.plist) + se o **xtool consegue 
 | **share**       | `UIActivityViewController`                                 | Nenhum                                                                | N/A                  | ✅ OK |
 | **clipboard**   | `UIPasteboard.general`                                     | Nenhum                                                                | N/A                  | ✅ OK |
 | **haptics**     | `UIFeedbackGenerator` / `CoreHaptics`                      | Nenhum (só device físico; simulador ignora)                           | N/A                  | ✅ OK |
+| **bluetooth (BLE, foreground)** | CoreBluetooth (`CBCentralManager`)          | `NSBluetoothAlwaysUsageDescription` (Info.plist)                      | Sim (chave plist)    | ✅ OK |
+| **bluetooth (background)** | CoreBluetooth + background mode              | `UIBackgroundModes: bluetooth-central` (chave de array no Info.plist)  | ⚠️ é chave de plist (injetável), mas sob escrutínio de App Review | ⚠️ fora do v2 (ver nota) |
+| **bluetooth (classic, não-BLE)** | External Accessory (MFi)               | Programa **MFi** (hardware certificado Apple)                          | ❌ (MFi-gated)       | ❌ **BLOQUEADO** |
+
+> **⚠️ Bluetooth no iOS:** BLE em **foreground** funciona na conta free (só a usage-string
+> `NSBluetoothAlwaysUsageDescription`, injetável). **Background BLE** usa `UIBackgroundModes:
+> bluetooth-central` — que é chave de **Info.plist** (tecnicamente injetável pelo xtool,
+> **confirmar**), não entitlement de portal; a trava real é o App Review (irrelevante em
+> sideload). Mantido **fora do v2** por escopo, não por bloqueio de conta. **Bluetooth
+> clássico** (não-BLE) exige **MFi** (hardware certificado) → fora do alcance; a ABI é
+> **BLE-only**.
 
 **Resumo pro escopo v2 na conta free:** câmera, galeria, GPS (when-in-use), notificação
-**local**, Face/Touch ID, keychain **por-app**, share, clipboard e haptics **passam**.
-Ficam **fora** (exigem conta paga / App ID no portal): **push notifications**, **keychain
-compartilhado/iCloud**, e por tabela também App Groups e Associated Domains (não são
-capabilities deste design, mas caem na mesma trave). Por isso `notifications.wit` expõe
-**só local** e `secure-storage.wit` **só por-app**.
+**local**, Face/Touch ID, keychain **por-app**, share, clipboard, haptics e **BLE
+foreground** **passam**. Ficam **fora**: **push notifications**, **keychain
+compartilhado/iCloud** (exigem conta paga / App ID no portal), **BLE background** (escopo)
+e **Bluetooth clássico** (MFi); e por tabela também App Groups e Associated Domains (não
+são capabilities deste design, mas caem na mesma trave). Por isso `notifications.wit` expõe
+**só local**, `secure-storage.wit` **só por-app** e `bluetooth.wit` **só BLE central**.
 
 ### 5.2 Android
 
@@ -243,11 +304,29 @@ API nativa Android + a permissão declarada no `AndroidManifest.xml` (as marcada
 | **share**       | `Intent.ACTION_SEND` / `ACTION_SEND_MULTIPLE` + `createChooser` | **Nenhuma permissão**                                              | — |
 | **clipboard**   | `ClipboardManager` (`CLIPBOARD_SERVICE`)                    | **Nenhuma permissão**                                                   | Leitura só com app em foreground (API 29+); toast de cópia (API 33+) |
 | **haptics**     | `VibratorManager` (API 31+) / `Vibrator` + `VibrationEffect`; `View.performHapticFeedback` | `android.permission.VIBRATE` *(normal, auto)*             | Só device físico |
+| **bluetooth (BLE)** | `BluetoothAdapter` + `BluetoothLeScanner` / `BluetoothGatt` | `BLUETOOTH_SCAN` + `BLUETOOTH_CONNECT` *(runtime, API 31+)*; legado (≤30): `BLUETOOTH`+`BLUETOOTH_ADMIN` *(normal)* + `ACCESS_FINE_LOCATION` *(runtime)* + `<uses-feature bluetooth_le>` | Em API 31+ use flag `neverForLocation` no scan p/ dispensar location. Background BLE = foreground service (fora do v2) |
 
-**Resumo Android v2:** as mesmas 9 capabilities do iOS mapeiam limpo. Nenhuma trava de conta;
+**Resumo Android v2:** as mesmas 10 capabilities do iOS mapeiam limpo. Nenhuma trava de conta;
 o único "extra" é Firebase pra push (fora do v2) e Play Services pra localização *fused*
 (dá pra cair no `LocationManager` da AOSP se quiser zero Google). Paridade com o iOS
-mantida: `notifications` = **local**, `secure-storage` = **por-app**.
+mantida: `notifications` = **local**, `secure-storage` = **por-app**, `bluetooth` = **BLE
+central**. BLE no Android **não tem** a trava MFi do clássico nem escrutínio de conta.
+
+### 5.3 Desktop (Win / Linux / macOS)
+
+O desktop é alvo em maturação (task desktop). O contrato é o mesmo; o host desktop mapeia
+cada capability pra API do SO. Aqui documentado o **bluetooth (BLE)** — a capability nova —
+nas três plataformas; o mapa desktop das demais capabilities sai junto do host desktop.
+
+| Plataforma | API nativa BLE                                             | Permissão / gate                                                       |
+|------------|------------------------------------------------------------|------------------------------------------------------------------------|
+| **Windows**| WinRT `Windows.Devices.Bluetooth` (`BluetoothLEDevice`, `BluetoothLEAdvertisementWatcher`) | App desktop clássico: sem gate. App **empacotado (MSIX)**: capability `bluetooth` no manifesto. |
+| **Linux**  | **BlueZ** via D-Bus (`org.bluez`)                          | Usuário no grupo `bluetooth` / polkit; sem prompt no estilo mobile.    |
+| **macOS**  | **CoreBluetooth** (mesmo do iOS)                           | `NSBluetoothAlwaysUsageDescription` no Info.plist + app assinado; macOS 11+ mostra prompt. |
+
+> O host desktop roda o WASM em **wasmtime** (JIT, sem restrição — §3.1). O padrão
+> stream/one-shot é idêntico; só a implementação nativa por trás de cada função muda.
+> (⚠️ macOS sem Mac: assinatura via `rcodesign` no Linux — alinhado ao spike desktop.)
 
 ### Pontos a confirmar no spike (não assumir)
 
@@ -269,16 +348,29 @@ spike WASM-on-device fecha:
    sem NDK, mais simples porém interpretado). Não muda o contrato — decisão interna do host.
 6. **Android — localização:** `FusedLocationProviderClient` exige Play Services. Confirmar
    se aceitamos a dependência do Google ou se caímos no `LocationManager` da AOSP (sem Google).
+7. **iOS — background BLE:** `UIBackgroundModes: bluetooth-central` é chave de Info.plist
+   (não entitlement de portal). **Confirmar** se o xtool injeta arrays no plist; de todo modo
+   fica **fora do v2** (foreground basta pro caso de uso previsto).
+8. **BLE — MTU / payloads grandes:** BLE tem MTU pequeno (~185–512 B). `write-characteristic`
+   e as notificações assumem payloads curtos; transferência grande (firmware/arquivo) exige
+   chunking na camada do app. Confirmar se algum caso de uso precisa disso no v2.
 
 ## 6. Escopo / não-metas (v2)
 
-- **É:** contrato WIT das 9 capabilities custom (platform-neutral), lowering achatado
-  core-module, manifesto capability-based, async reqId+callback, mapa **iOS + Android**
-  por capability, nota de runtime (iOS interpretador / Android JIT).
-- **Não é (ainda):** implementação dos hosts (Swift **e** Kotlin/Java), bindgen .NET, push
-  notifications (APNs/FCM), keychain compartilhado/iCloud/Block Store, background location,
-  CoreHaptics custom, transporte binário / migração pra futures do Component Model.
-- **Os dois hosts são co-iguais no design.** A implementação pode priorizar o iOS primeiro
-  (onde o Kanban é a prova), mas o contrato já nasce válido pros dois — nenhum retrabalho de
-  ABI pra ligar o Android depois.
+- **É:** contrato WIT das **10** capabilities custom (platform-neutral, inclui **bluetooth
+  BLE**), lowering achatado core-module, manifesto capability-based, **dois padrões async
+  (one-shot reqId+callback E stream subId+event)**, mapa **iOS + Android** por capability
+  (+ Desktop pro BLE), nota de runtime (iOS interpretador / Android+Desktop JIT).
+- **Não é (ainda):** implementação dos hosts (Swift, Kotlin/Java, desktop), bindgen .NET,
+  push (APNs/FCM), keychain compartilhado/iCloud/Block Store, background location, background
+  BLE, **BLE peripheral/GATT-server**, **Bluetooth clássico (MFi)**, CoreHaptics custom,
+  capabilities de **sensores/áudio** (reusarão o padrão stream sem mudar a ABI), mapa desktop
+  completo das demais capabilities, transporte binário / migração pra streams+futures do
+  Component Model.
+- **Hosts co-iguais no design** (iOS + Android; desktop em maturação). A implementação pode
+  priorizar o iOS (Kanban = prova), mas o contrato já nasce válido pros três — sem retrabalho
+  de ABI pra ligar Android/Desktop depois.
+- **O padrão stream já cobre capabilities futuras:** somar sensores, áudio-frames ou qualquer
+  fonte de eventos contínuos é só adicionar `subscribe-*` + event-kinds, reusando
+  `on-capability-event` + `unsubscribe`.
 ```
