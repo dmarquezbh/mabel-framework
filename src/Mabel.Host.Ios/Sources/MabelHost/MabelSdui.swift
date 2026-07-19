@@ -337,6 +337,7 @@ public final class MabelViewBuilder {
     // MARK: - Fallback (degradação graciosa)
 
     private func buildFallback(_ node: SduiNode) -> UIView {
+        NSLog("[Board] fallback node=\(node.id) typeRaw=\(node.typeRaw) policy=\(node.fallback ?? 0)")
         switch node.fallback ?? 0 {   // default RenderChildren
         case 2: // Ignore — não ocupa espaço
             let v = UIView()
@@ -421,6 +422,7 @@ public final class MabelViewBuilder {
     }
 
     private func performNavigate(_ n: SduiNavigate) {
+        NSLog("[Board] navigate kind=\(n.kind) route=\(n.route ?? "-") activeNav=\(activeNav != nil)")
         guard let nav = activeNav else { return }
         switch n.kind {
         case 0: // push
@@ -613,6 +615,7 @@ public final class MabelViewBuilder {
     // MARK: - Lista virtualizada (UICollectionView diffable)
 
     private func buildVirtualizedList(_ node: SduiNode, _ data: SduiListData, _ props: SduiProps?) -> UIView {
+        NSLog("[Board] list \(node.id): items=\(data.items?.count ?? 0) virtualized=\(data.virtualized ?? true) axis=\(data.axis ?? 0) tpl=\(data.itemTemplate.type.map { "\($0)" } ?? "?")")
         let horizontal = (data.axis ?? props?.axis) == 1
         var cfg = UICollectionLayoutListConfiguration(appearance: .plain)
         cfg.backgroundColor = .clear
@@ -638,8 +641,14 @@ public final class MabelViewBuilder {
 
         // Cada célula constrói o ItemTemplate com o binding da linha.
         let template = data.itemTemplate
-        let registration = UICollectionView.CellRegistration<UICollectionViewCell, SduiListItem> { [weak self] cell, _, item in
-            guard let self else { return }
+        // NB: captura FORTE de `self` de propósito — o builder é criado como local
+        // no updateUIView e seria desalocado ao retornar; a cell registration é
+        // LAZY (roda quando a célula é dequeued). Com [weak self] o builder morria
+        // → células vazias. A collection view (via data source→registration) passa
+        // a reter o builder pelo tempo de vida da lista. Sem ciclo: builder não
+        // retém a cv.
+        let registration = UICollectionView.CellRegistration<UICollectionViewCell, SduiListItem> { cell, _, item in
+            NSLog("[Board] cell \(item.id) credor=\(item.data?["credor"] ?? "?")")
             cell.contentView.subviews.forEach { $0.removeFromSuperview() }
             self.bindingContext = item.data
             let itemNode = item.onTap != nil
@@ -665,6 +674,7 @@ public final class MabelViewBuilder {
         snap.appendSections([0])
         snap.appendItems((data.items ?? []).map { $0.id })
         ds.apply(snap, animatingDifferences: false)
+        NSLog("[Board] list \(node.id): snapshot applied \(snap.numberOfItems) items")
 
         // Retém o data source no próprio collection view.
         objc_setAssociatedObject(cv, &Self.dsKey, ds, .OBJC_ASSOCIATION_RETAIN)
