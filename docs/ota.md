@@ -34,17 +34,25 @@ o modelo do WeChat, aplicado com WASM.
 Há um trade-off **real** entre velocidade e atualizabilidade, ancorado no que o spike
 WASM-on-device provou:
 
-- **AOT (baked):** compilar o wasm ahead-of-time e assá-lo no binário (no iOS, o caminho
-  aspiracional wasm2c→C→arm64) dá **velocidade nativa**, mas o mini-app fica **preso no
-  build** → **NÃO é OTA** (mudar exige rebuild + loja).
+- **AOT (baked):** compilar o wasm ahead-of-time e assá-lo no binário (no iOS,
+  wasm2c→C→clang do xtool→arm64) dá **velocidade nativa**, mas o mini-app fica **preso no
+  build** → **NÃO é OTA** (mudar exige rebuild + loja). **PROVADO no device sem Mac** (spike
+  v2), **~163×** mais rápido que o interpretador num bench trivial.
 - **Interpretador (WasmKit):** **PROVADO** rodando no iPhone via xtool **sem Mac**
   (interpretador puro-Swift, sem JIT). Carrega módulos **em runtime** → **habilita OTA**
   de mini-apps (nível 2). Custo: mais lento que AOT/JIT.
   > Achado do spike a registrar: **.NET→wasm não roda no WasmKit** (o .NET emite
-  > WASI-preview2 Component + Mono; WasmKit é core-module + preview1 → rejeita). Logo o
-  > **mini-app live-on-iOS é um lean core-wasm** (Rust/TinyGo/AssemblyScript/C), não
-  > .NET. .NET fica em autoria/build-time/desktop (ADR 0007). No desktop/Android, o
-  > runtime é mais capaz (JIT) e a matriz de linguagens abre.
+  > WASI-preview2 Component + Mono ~3,34 MB; WasmKit é core-module + preview1 → rejeita;
+  > core Rust ~55 B roda). Logo o **mini-app live-on-iOS é um lean core-wasm** (Rust/TinyGo/
+  > AssemblyScript/C), não .NET (`NativeAOT-LLVM` seria o fix, mas bloqueado no WSL hoje).
+  > .NET fica em autoria/build-time/desktop (ADR 0007). No desktop/Android, o runtime é mais
+  > capaz (JIT) e a matriz de linguagens abre.
+
+> **Os dois runtimes coexistem no MESMO app:** um app leva o core AOT-baked **e** o
+> interpretador WasmKit ao mesmo tempo — mantém WASM rápido (baked) **e** tem OTA (lógica
+> interpretada). Não é escolher um OU outro. **Limite honesto (física):** pra um mesmo pedaço
+> de código, "velocidade-nativa + OTA-de-lógica-nova + App-Store-pública" não coexistem
+> (rápido=baked=sem-OTA; OTA=interpretado=cinza-público). Interno PJUS não tem esse limite.
 
 ### Estratégia recomendada (combina os três)
 
@@ -135,5 +143,6 @@ reservado ao comportamento novo. Ou seja: empurra o máximo de mudança pro Tier
   AOT vs interpretador ancorada no spike; a matriz interno-vs-público com a leitura honesta
   da 2.5.2.
 - **Não é (ainda):** implementação do canal de update; formato/assinatura do registry
-  (ADR 0005); rollout gradual/rollback; wasm2c-AOT (aspiracional, não provado — só o
-  interpretador WasmKit está provado no device).
+  (ADR 0005); rollout gradual/rollback assinados; distribuição desktop (updater por-OS:
+  MSIX/Squirrel, AppImage/Flatpak, Sparkle+notarização). (Nota: wasm2c-AOT **e** o
+  interpretador WasmKit **ambos provados** no device na v2 do spike.)
