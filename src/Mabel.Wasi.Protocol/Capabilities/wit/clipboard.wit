@@ -1,0 +1,23 @@
+// =============================================================================
+// clipboard — área de transferência.
+//
+// iOS: UIPasteboard.general. Sem entitlement → funciona na conta FREE.
+// Nota de privacidade: desde iOS 14 o SO mostra um banner quando um app LÊ o
+// pasteboard. Ledgerções síncronas (rápidas, locais).
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface clipboard {
+    use types.{cap-status};
+
+    /// Grava texto na área de transferência.
+    write-text: func(text: string) -> cap-status;
+
+    /// Lê texto. None = sem texto no pasteboard. Pode disparar o banner do SO.
+    read-text: func() -> option<string>;
+
+    /// True se há texto disponível SEM ler o conteúdo (usa
+    /// UIPasteboard.hasStrings — não dispara o banner).
+    has-text: func() -> bool;
+}

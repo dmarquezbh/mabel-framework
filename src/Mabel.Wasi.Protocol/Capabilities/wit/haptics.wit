@@ -1,0 +1,40 @@
+// =============================================================================
+// haptics — feedback tátil.
+//
+// iOS: UIFeedbackGenerator (impact/notification/selection) para os padrões
+// comuns; CoreHaptics (CHHapticEngine) para padrões custom. Sem entitlement,
+// sem usage-string → funciona na conta FREE. ⚠️ Só em device físico (o
+// simulador ignora); irrelevante aqui pois o deploy é sempre no device real.
+//
+// Fire-and-forget: sem request-id nem callback (efeito instantâneo, sem
+// resultado). Se o device não suportar, é no-op silencioso.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface haptics {
+    /// Impacto físico (UIImpactFeedbackGenerator).
+    enum impact {
+        light,
+        medium,
+        heavy,
+        soft,
+        rigid,
+    }
+
+    /// Feedback semântico de notificação (UINotificationFeedbackGenerator).
+    enum notify {
+        success,
+        warning,
+        failure,
+    }
+
+    /// Toque de impacto.
+    impact: func(style: impact);
+
+    /// Feedback de resultado de uma ação.
+    notification: func(kind: notify);
+
+    /// Mudança de seleção (UISelectionFeedbackGenerator) — ex.: girar um picker.
+    selection: func();
+}
