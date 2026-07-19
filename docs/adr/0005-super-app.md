@@ -36,6 +36,10 @@ O Mabel é uma **plataforma de super-app**, não só um framework de UI:
 5. **Aria entra como mini-app webview** (reuso imediato da web existente) ao lado dos
    SDUI-nativos, migrando pra SDUI depois. Super-app **misto** é suportado. O webview é
    uma casca por-mini-app, não a arquitetura do app.
+6. **Isolamento é garantia-por-design:** publicar/atualizar um mini-app (ex.: Opera) **não
+   quebra outro** (ex.: Aria) — sandbox WASM separado + memória linear isolada + descritor
+   próprio + error boundary + versão independente no registry. Propriedade da arquitetura,
+   ainda não implementada (depende do host multi-módulo + WASM-live).
 
 ## Alternativas consideradas
 

@@ -163,6 +163,11 @@ rendered by the same native controls. It provides **shared services** — identi
 capabilities, storage (shared + per-mini-app), navigation, and shell-mediated messaging
 between mini-apps (they never see each other directly; the sandbox holds).
 
+**Isolation is a guarantee by design:** publishing or updating one mini-app (e.g. Opera)
+**cannot break another** (e.g. Aria) — separate WASM sandbox + isolated linear memory + its
+own descriptor + error boundary + independent version in the registry. It's an architectural
+property, **designed, not yet implemented** (depends on the multi-module host + WASM-live).
+
 **Incorporating Aria:** the fast path is a **webview mini-app** (Aria is already web →
 hosted in a `WKWebView`/`WebView2` alongside the SDUI-native mini-apps, reusing today's web
 with the shell's auth/capabilities), migrating to SDUI-native later. A **mixed** super-app
@@ -353,6 +358,33 @@ notarization (Apple tooling, reachable via API without a Mac — pending the spi
 
 ---
 
+## Debugging & DevTools
+
+Debug is **multi-layer**, one tool per boundary (full design:
+**[docs/debugging.md](docs/debugging.md)** · **[ADR 0008](docs/adr/0008-debugging.md)**):
+
+1. **Logic (guest WASM)** — debug on the **desktop/build host** (full runtime, normal
+   debugger); the logic is the same one that runs on device.
+2. **Descriptor (SDUI tree)** — a **descriptor inspector** (tree, live props, frame diff,
+   time-travel) — React-DevTools/Flutter-inspector style; trivial because the descriptor is
+   pure data.
+3. **Native render** — **select-mode**: tap a native view → the source SDUI node (`Id`).
+4. **Guest↔host wire** — a **wire inspector** (the protocol's "Network tab": descriptors,
+   tap events, capability calls with `reqId`/streams traced).
+
+**Mabel-specific leverage:** the **web host + browser DevTools is the primary debug
+surface** (the same descriptor runs on web and native via multi-target HMR → debug in Chrome
+DevTools, faithful to native, reusing mature tooling); **deterministic replay** (app =
+descriptor + WASM + externalized state → capture and re-run → reproduce the bug from data);
+**error boundaries** (a node/guest error isolates to the mini-app/subtree — doesn't take down
+the super-app — with a dev error overlay).
+
+**Honest status:** today debugging is **`NSLog` via `idevicesyslog`** (how the on-device tap
+was validated) — primitive. The mature toolset (inspector/wire/replay/boundaries) is
+🟢-tier, **wave 4** of the roadmap (task #20).
+
+---
+
 ## Status — honest, per platform
 
 Legend: **PROVEN** (runs, validated) · **DESIGNED** (spec/ADR, not built) · **TODO** (not
@@ -473,7 +505,8 @@ Trade-off on expressiveness: SDUI's power is bounded by its node set. Bespoke vi
 [0004 Desktop](docs/adr/0004-desktop.md) ·
 [0005 Super-app](docs/adr/0005-super-app.md) ·
 [0006 OTA](docs/adr/0006-ota.md) ·
-[0007 Polyglot authoring](docs/adr/0007-autoria-poliglota.md)
+[0007 Polyglot authoring](docs/adr/0007-autoria-poliglota.md) ·
+[0008 Debugging](docs/adr/0008-debugging.md)
 
 > Note: ADRs 0001/0002 live on their own feature branches (`feat/sdui-descriptor`,
 > `feat/mabel-capabilities-abi`); 0003–0007 and this README are on
@@ -509,6 +542,64 @@ This tail is tracked as task #20 (implement in waves: 🔴 → 🟡 → 🟢).
 
 ---
 
+## FAQ
+
+**Isn't this a mini-React-Native? Is there a slow bridge?**
+No slow bridge. The native host owns the fast loop, calls are in-process, and re-renders are
+diffed — not a per-frame serialized bridge. The guest emits a semantic descriptor, not a
+chatty stream of UI mutations.
+
+**Where's WASM/WASI on mobile?**
+It's the app's **logic engine on device** — WasmKit interpreter in dev, wasm2c→native in
+release, both proven on iPhone without a Mac.
+
+**Does WASM run without being slow on iOS?**
+Yes: dev = interpreter (fine for editing), release = wasm2c→native (~163× faster, proven).
+
+**Can I use Go/Rust instead of .NET?**
+Yes — the guest is polyglot core-WASM (a Rust core is ~55 B). Note: .NET/Mono-wasm does
+**not** run on WasmKit, so the *live on-device* guest is a lean language; .NET is for
+authoring, build-time, and desktop.
+
+**Is writing a screen hard — a new DSL?**
+No. You author in Blazor/Razor → custom renderer → descriptor (or Go builders / Rust macros).
+No new DSL to learn.
+
+**Can't it just map to Blazor?**
+Yes — a custom Blazor renderer emits SDUI (runs headless, no browser).
+
+**Do MAUI / BlazorBindings.Maui help?**
+Not for iOS (they need a Mac). BlazorBindings is only a *renderer reference*.
+
+**How does it reach native APIs / Bluetooth?**
+Through the WIT capability bridge implemented by the native host; BLE fits the async
+`reqId` + stream model.
+
+**Does HMR work? What about state?**
+Yes — the host hot-swaps the wasm and re-renders; state survives because it's externalized in
+a host store; and HMR broadcasts to all targets at once (web + native together).
+
+**Can it update without the store / work offline?**
+OTA: descriptor always, wasm-logic internally (public store is gray). Offline: local WASM is
+the engine (AOT-baked = offline by construction).
+
+**Are macOS / desktop covered?**
+Windows + Linux are designed (native controls, primary HMR loop). macOS without a Mac is a
+spike — "to confirm", not promised.
+
+**How do I debug it?**
+Four layers (logic / descriptor / render / wire) + browser DevTools as the primary surface +
+deterministic replay + error boundaries. Today it's `NSLog`; the rich tooling is wave 4.
+
+**Super-app: can one mini-app break another?**
+No — separate WASM sandbox, isolated memory, its own descriptor, an error boundary, and an
+independent version in the registry. Isolation is a guarantee by design.
+
+**Tiny footprint like Tauri?**
+Yes — a lean guest (KB) with no webview engine bundled.
+
+---
+
 ## Project structure
 
 ```
@@ -525,9 +616,9 @@ mabel-framework/
     Mabel.Cli/                 # `mabel` CLI (AOT)
     Mabel.Host.Ios/            # Swift host (UIKit view-builder + WasmKit runtime)
   docs/
-    adr/0001..0007             # architecture decision records
+    adr/0001..0008             # architecture decision records
     sdui-*, capabilities-abi.md, hmr-e-estado.md, desktop.md, super-app.md, ota.md,
-    autoria-poliglota.md
+    autoria-poliglota.md, debugging.md
   samples/                     # hello-world, hello-world-ios
   tests/                       # Mabel.Core.Tests, Mabel.Renderer.Tests
 ```

@@ -85,6 +85,26 @@ Mini-apps não se enxergam diretamente (sandbox). Se o Board precisa abrir o Ari
 contexto, ele pede ao **shell** (`open-mini-app(id, params)`); o shell media. Isso
 mantém o isolamento e dá ao shell um ponto único de auditoria/navegação.
 
+### Garantia de isolamento (GARANTIA-POR-DESIGN)
+
+> **Publicar ou atualizar o mini-app Opera NÃO quebra o Aria** (nem qualquer outro
+> mini-app). É uma **garantia por construção**, sustentada por quatro barreiras
+> independentes:
+>
+> 1. **Sandbox WASM separado** — cada mini-app é um módulo WASM próprio; um não executa
+>    no espaço do outro.
+> 2. **Memória linear isolada** — memórias lineares distintas; um mini-app não lê nem
+>    corrompe o heap do outro.
+> 3. **Descritor próprio** — cada um emite sua árvore SDUI; não há árvore compartilhada
+>    onde um pise no layout do outro.
+> 4. **Error boundary** — um crash/erro de um mini-app isola nele (o shell o contém e
+>    mostra overlay), sem derrubar o super-app (ver `docs/debugging.md`).
+> 5. **Versão independente no registry** — cada mini-app versiona e faz rollback sozinho;
+>    atualizar o Opera não toca o binário/descritor do Aria.
+>
+> **Status:** garantia **desenhada, não implementada** — depende do host multi-módulo e
+> da integração WASM-live existirem. É uma propriedade da arquitetura, não código pronto.
+
 ## 4. Incorporando o Aria (caminho real)
 
 O Aria já é web (`<rui-assessor>`). Dois caminhos, e o modelo **misto** é suportado:

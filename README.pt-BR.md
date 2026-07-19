@@ -165,6 +165,11 @@ identidade/auth, capabilities, storage (compartilhado + por-mini-app), navegaç�
 mensageria entre mini-apps mediada pelo shell (eles nunca se enxergam direto; o sandbox
 segura).
 
+**Isolamento é garantia por design:** publicar ou atualizar um mini-app (ex.: Opera) **não
+quebra outro** (ex.: Aria) — sandbox WASM separado + memória linear isolada + descritor
+próprio + error boundary + versão independente no registry. É propriedade da arquitetura,
+**desenhada, ainda não implementada** (depende do host multi-módulo + WASM-live).
+
 **Incorporando o Aria:** o caminho rápido é um **mini-app webview** (o Aria já é web →
 hospedado numa `WKWebView`/`WebView2` ao lado dos mini-apps SDUI-nativos, reusando a web de
 hoje com a auth/capabilities do shell), migrando pra SDUI-nativo depois. Um super-app
@@ -358,6 +363,33 @@ notarização (ferramentas Apple, alcançáveis via API sem Mac — pendente do 
 
 ---
 
+## Debugging & DevTools
+
+Debug é **multi-camada**, uma ferramenta por fronteira (design completo:
+**[docs/debugging.md](docs/debugging.md)** · **[ADR 0008](docs/adr/0008-debugging.md)**):
+
+1. **Lógica (guest WASM)** — debuga no **desktop/build-host** (runtime full, debugger normal);
+   a lógica é a mesma que roda no device.
+2. **Descritor (árvore SDUI)** — um **inspector de descritor** (árvore, props ao vivo, diff de
+   frame, time-travel) — estilo React-DevTools/Flutter-inspector; trivial porque descritor é
+   dado puro.
+3. **Render nativo** — **select-mode**: toca numa view nativa → o nó SDUI de origem (`Id`).
+4. **Wire guest↔host** — um **wire inspector** ("aba Network" do protocolo: descritores,
+   eventos de tap, chamadas de capability com `reqId`/streams traçados).
+
+**Alavanca Mabel-específica:** o **host web + DevTools do browser é a superfície primária de
+debug** (o mesmo descritor roda no web e no nativo via HMR multi-alvo → debuga no Chrome
+DevTools, fiel ao nativo, reusando tooling maduro); **replay determinístico** (app = descritor
++ WASM + estado externalizado → captura e re-executa → reproduz o bug a partir do dado);
+**error boundaries** (erro de nó/guest isola no mini-app/subárvore — não derruba o super-app —
+com overlay de erro no dev).
+
+**Status honesto:** hoje o debug é **`NSLog` via `idevicesyslog`** (foi como o tap no device
+foi validado) — primitivo. O toolset maduro (inspector/wire/replay/boundaries) é 🟢-tier,
+**onda 4** do roadmap (task #20).
+
+---
+
 ## Status — honesto, por plataforma
 
 Legenda: **PROVADO** (roda, validado) · **DESENHADO** (spec/ADR, não construído) · **A-FAZER**
@@ -479,7 +511,8 @@ boards, dashboards).
 [0004 Desktop](docs/adr/0004-desktop.md) ·
 [0005 Super-app](docs/adr/0005-super-app.md) ·
 [0006 OTA](docs/adr/0006-ota.md) ·
-[0007 Autoria poliglota](docs/adr/0007-autoria-poliglota.md)
+[0007 Autoria poliglota](docs/adr/0007-autoria-poliglota.md) ·
+[0008 Debugging](docs/adr/0008-debugging.md)
 
 > Nota: os ADRs 0001/0002 vivem nas suas próprias branches (`feat/sdui-descriptor`,
 > `feat/mabel-capabilities-abi`); 0003–0007 e este README estão em
@@ -516,6 +549,64 @@ Essa cauda está registrada como task #20 (implementar em ondas: 🔴 → 🟡 �
 
 ---
 
+## FAQ
+
+**Não vira um mini-React-Native? Tem bridge lenta?**
+Sem bridge lenta. O host nativo é dono do loop rápido, as chamadas são in-process e o
+re-render é diffado — não é um bridge serializado por frame. O guest emite um descritor
+semântico, não um fluxo tagarela de mutações de UI.
+
+**Cadê o WASM/WASI no mobile?**
+É o **motor da lógica no device** — interpretador WasmKit no dev, wasm2c→nativo no release,
+os dois provados no iPhone sem Mac.
+
+**Roda WASM sem lentidão no iOS?**
+Sim: dev = interpretador (ok pra editar), release = wasm2c→nativo (~163× mais rápido, provado).
+
+**Posso usar Go/Rust em vez de .NET?**
+Sim — o guest é core-WASM poliglota (um core Rust é ~55 B). Ressalva: .NET/Mono-wasm **não**
+roda no WasmKit, então o guest *live-on-device* é uma lean-lang; .NET fica em autoria,
+build-time e desktop.
+
+**É difícil escrever uma tela — um DSL novo?**
+Não. Você autora em Blazor/Razor → renderer custom → descritor (ou funcs Go / macros Rust).
+Sem DSL novo pra aprender.
+
+**Não dá pra mapear pra Blazor?**
+Dá — um renderer Blazor custom emite SDUI (roda headless, sem browser).
+
+**MAUI / BlazorBindings.Maui adiantam?**
+Não pro iOS (exigem Mac). BlazorBindings é só *referência de renderer*.
+
+**Como acessa APIs nativas / Bluetooth?**
+Pela ponte de capabilities WIT implementada pelo host nativo; BLE cai no modelo async
+`reqId` + stream.
+
+**HMR funciona? E o estado?**
+Sim — o host faz hot-swap do wasm e re-renderiza; o estado sobrevive porque é externalizado
+num store do host; e o HMR faz broadcast pra todos os alvos ao mesmo tempo (web + nativo juntos).
+
+**Atualiza sem loja / funciona offline?**
+OTA: descritor sempre, lógica-wasm internamente (loja pública é cinza). Offline: o WASM local
+é o motor (AOT-baked = offline por construção).
+
+**macOS / desktop são atendidos?**
+Windows + Linux são design (controles nativos, loop primário de HMR). macOS sem Mac é spike —
+"a confirmar", não prometido.
+
+**Como debugo?**
+Quatro camadas (lógica / descritor / render / wire) + DevTools do browser como superfície
+primária + replay determinístico + error boundaries. Hoje é `NSLog`; o tooling rico é a onda 4.
+
+**Super-app: um mini-app quebra o outro?**
+Não — sandbox WASM separado, memória isolada, descritor próprio, error boundary e versão
+independente no registry. Isolamento é garantia por design.
+
+**Tamanho mínimo tipo Tauri?**
+Sim — guest enxuto (KB), sem engine de webview embutida.
+
+---
+
 ## Estrutura do projeto
 
 ```
@@ -532,9 +623,9 @@ mabel-framework/
     Mabel.Cli/                 # CLI `mabel` (AOT)
     Mabel.Host.Ios/            # host Swift (view-builder UIKit + runtime WasmKit)
   docs/
-    adr/0001..0007             # architecture decision records
+    adr/0001..0008             # architecture decision records
     sdui-*, capabilities-abi.md, hmr-e-estado.md, desktop.md, super-app.md, ota.md,
-    autoria-poliglota.md
+    autoria-poliglota.md, debugging.md
   samples/                     # hello-world, hello-world-ios
   tests/                       # Mabel.Core.Tests, Mabel.Renderer.Tests
 ```
