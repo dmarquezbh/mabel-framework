@@ -373,4 +373,27 @@ spike WASM-on-device fecha:
 - **O padrão stream já cobre capabilities futuras:** somar sensores, áudio-frames ou qualquer
   fonte de eventos contínuos é só adicionar `subscribe-*` + event-kinds, reusando
   `on-capability-event` + `unsubscribe`.
+
+## 7. Status de implementação (host iOS)
+
+O host iOS já implementa TODA a ABI nativamente (Daniel: "implementa tudo; free-gating
+se descobre no device"). Ver `src/Mabel.Host.Ios/Sources/MabelHost/Capabilities/` e
+`docs/capabilities-guest-bindings.md` (assinaturas core-wasm p/ o guest).
+
+- **Wire** (platform-agnostic, Foundation): `CapabilityContract/Types/Manifest/Wire.swift`
+  + `InProcessGuestBridge`. `CapabilityHost` roteia, aplica o gate do manifesto, e devolve
+  via `GuestBridge` (one-shot `respond` + stream `emit` + `unsubscribe` + `cap_alloc`).
+- **Impls nativas (11):** camera, photo, location(one-shot+stream), notifications(local+stream),
+  biometrics, secure-storage(Keychain), share, clipboard, haptics, bluetooth(BLE, one-shot+stream).
+- **Harness:** `samples/capabilities-harness/` — app xtool que chama cada `CapabilityHost`
+  function direto (prova a impl nativa) via `InProcessGuestBridge`.
+- **Pendente (1 seam):** o **adapter WasmKit** que decodifica args i32/(ptr,len) e liga o
+  `GuestBridge` a um guest `.wasm` real — aguarda o runtime WASM aterrissar no host (spike #17).
+- **Free-gating:** NÃO travado; só usage-strings óbvias. O que a conta FREE bloquear se
+  descobre rodando no device.
+- **Validação no device:** câmera, GPS, biometria (Face ID), haptics e BLE exigem hardware
+  real (simulador não tem). Notifications/keychain/clipboard/share exercitáveis mais amplamente.
+- ⚠️ **Build via xtool NÃO verificado neste ambiente:** a WSL (Ubuntu 26.04) não tem toolchain
+  Swift nem Darwin SDK (swiftly: "Unsupported Linux platform"); o spike rodou noutra máquina.
+  Código escrito e revisado à mão. Build: `cd samples/capabilities-harness && xtool dev build`.
 ```
