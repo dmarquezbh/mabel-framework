@@ -61,6 +61,11 @@ o modelo.
 
 ### D2 — Assincronia por request-id + callback (não futures)
 
+> Cobre só o **one-shot** (uma chamada → um resultado). Eventos contínuos (scan BLE, GPS
+> contínuo, notify de característica) usam o padrão **stream/subscription** do **ADR 0003**,
+> que estende esta decisão com o mesmo espírito (callback achatado, não futures do CM).
+
+
 - Toda operação async recebe um `request-id: u64` gerado pelo guest e **retorna na hora**
   um `CapStatus` (aceito / negado localmente).
 - O trabalho nativo roda async no host; ao terminar, o host chama **um único export do
