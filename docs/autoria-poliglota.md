@@ -82,6 +82,11 @@ e o achado do spike):
 - **iOS live (WasmKit, core-module + preview1):** **lean core-wasm** — Rust, TinyGo,
   AssemblyScript, C. **.NET→wasm NÃO roda** no WasmKit (emite preview2/Mono). Então o
   **mini-app live-on-iOS é lean-lang**, não .NET.
+  > **O que destravaria .NET-guest no WasmKit (nenhum barato hoje):** (a) o WasmKit ganhar
+  > suporte a **host de componentes / WASI Preview 2** (aí ele aceitaria o component .NET);
+  > ou (b) o .NET compilar por **NativeAOT-LLVM** para um **core-module preview1** enxuto
+  > (sem Mono). Ambos são pesados/imaturos — por isso o guest live-iOS fica em lean-lang
+  > por ora.
 - **.NET/C#/Blazor:** brilha em **autoria**, **geração de descritor em build-time**
   (ex.: `board_gen` roda no build/WSL e emite JSON de descritor — a tela iOS provada
   hoje é assim) e no **desktop** (runtime wasm com JIT roda .NET-wasm).

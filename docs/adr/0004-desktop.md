@@ -13,14 +13,16 @@ desktop trocando só o host. Além de ser um alvo real (apps Mabel de PC), o des
 resolve um problema de DX: no desktop o runtime WASM tem **JIT** (sem o ban do iOS),
 então o inner loop de HMR é imediato — edita, vê, sem device nem deploy.
 
-Restrições: **sem Mac** (mesma trave do ADR 0001) → **macOS-desktop adiado**;
-Windows e Linux primeiro. Host em .NET (encaixa no stack existente). Deve reusar o
-descritor SDUI (ADR 0001) e o WIT de capabilities (ADR 0002) sem alterações.
+Restrições: **sem Mac** (mesma trave do ADR 0001). Windows e Linux primeiro.
+**macOS-desktop = "A CONFIRMAR"** (não bloqueado): plausível sem Mac via cross-compile
+Swift/AppKit + `apple-codesign`/`rcodesign` + notarização por API, mas não é caminho
+pavimentado do xtool hoje → precisa de spike. Host em .NET (encaixa no stack existente).
+Deve reusar o descritor SDUI (ADR 0001) e o WIT de capabilities (ADR 0002) sem alterações.
 
 ## Decisão
 
-1. **Desktop é alvo de primeira classe**, ao lado de iOS e Android. Windows e Linux;
-   **macOS adiado** até haver Mac.
+1. **Desktop é alvo de primeira classe**, ao lado de iOS e Android. Windows e Linux
+   primeiro; **macOS-desktop "a confirmar"** (spike de build sem-Mac antes de prometer).
 2. **Host desktop em .NET** embutindo **wasmtime (JIT)** via Wasmtime.NET. Host fino:
    instancia o módulo, roda o `MabelViewBuilder` desktop (descritor → controles) e liga
    eventos/capabilities. Hot-swap barato → **desktop é o loop primário de HMR** (ADR 0003).
@@ -53,7 +55,7 @@ descritor SDUI (ADR 0001) e o WIT de capabilities (ADR 0002) sem alterações.
 - (−) Dois view-builders de host (WinUI + GTK) pra fidelidade nativa — mais superfície.
 - (−) SDUI v1 não cobre janelas/menus/teclado; apps desktop ricos esperam extensão de
   schema (fase posterior).
-- (−) macOS-desktop fica pra depois (trava do Mac).
+- (−) macOS-desktop fica "a confirmar" (depende de um spike de build sem-Mac).
 
 ## A validar / decidir (Daniel)
 
