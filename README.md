@@ -2,51 +2,73 @@
 
 > [Leia em Português / Read in Portuguese](README.pt-BR.md)
 
-**Mabel** builds cross-platform apps — **mobile and desktop** — from **one polyglot
-WASM module**. You write your app once (in C#/Blazor, Go, Rust, or any language that
-compiles to WebAssembly); a **thin native host** per platform turns a **semantic UI
-descriptor** into **real native OS controls**. **No WebView. No canvas re-implementation
-of the OS. And no Mac required to ship to iPhone.**
+**Mabel is a polyglot super-app platform.** One app ships to the device; its features are
+**WASM mini-apps** — one per project/team — that a **thin native shell** renders as **real
+native OS controls**. Each team writes in its own language; every mini-app speaks the same
+semantic UI contract. **No WebView. No canvas re-implementation of the OS. And no Mac
+required to ship to iPhone.**
 
 ---
 
-## The thesis: WASM as the "universal DLL"
+## The big picture: the Org super-app platform
 
-A DLL is a compiled artifact any program can load and call through a stable ABI,
-regardless of the language it was written in. Mabel applies that idea to **whole apps**:
+> **Each Org project/team ships its mini-app; the Org super-app renders them all.**
 
-> **Your app is one `.wasm` module.** It is language-agnostic (polyglot), sandboxed,
-> and portable. Each platform ships a small host that loads that one module and speaks
-> two contracts with it: a **UI descriptor** (what to show) and a **capabilities ABI**
-> (what the device can do). The host renders the descriptor with the platform's own
-> native controls.
+There is **one Org app** on the device. Its features are not hard-coded screens — they
+are independent **mini-apps** (each a WASM module + a UI descriptor), owned by different
+teams, that the shell loads and renders. Adding or fixing a feature means publishing a new
+mini-app, **without reinstalling** the app (see [OTA](docs/ota.md)).
 
-Everything else in Mabel follows from this one idea.
+**Pillars:**
+
+- **One app, many features.** Org is the app; Kanban, Chat, and whatever each team builds
+  are mini-apps inside it. They grow without going through the store again.
+- **Polyglot per team.** Each team in its own stack — Ledger in .NET/Blazor, another in
+  Go/Rust — and **all emit the same SDUI descriptor**. The platform democratizes; it does
+  not force .NET on anyone (see [polyglot authoring](docs/autoria-poliglota.md)).
+- **Shared by the super-app.** Identity/auth (device-code/OBO — log in **once**, every
+  mini-app inherits it), capabilities (camera/GPS/notifications via WIT), storage, and the
+  launcher/navigation across mini-apps.
+- **Sandboxed per mini-app.** Each mini-app runs isolated in its own WASM sandbox — one
+  project can't read another's memory or break it; authority is only what the manifest
+  grants. The right security model for many teams' code in one app.
+- **Registry of mini-apps.** The shell lists and loads the published mini-apps — baked
+  into the build (App-Store-safe) or dynamic internally (enterprise/MDM).
+
+Full design: **[docs/super-app.md](docs/super-app.md)** · **[ADR 0005](docs/adr/0005-super-app.md)**.
+
+---
+
+## The mechanism: WASM as the "universal DLL"
+
+A DLL is a compiled artifact any program can load and call through a stable ABI, whatever
+language wrote it. Mabel applies that to **whole apps**:
+
+> **A mini-app is one `.wasm` module.** Language-agnostic (polyglot), sandboxed, portable.
+> The shell loads it and speaks two contracts with it: a **UI descriptor** (what to show)
+> and a **capabilities ABI** (what the device can do). The shell renders the descriptor
+> with the platform's own native controls.
 
 ```mermaid
 flowchart TD
-    subgraph guest["App = ONE polyglot WASM module"]
-        A["Blazor / C#  ·  Go / TinyGo  ·  Rust  ·  …"]
-        A --> B["view(state) → SDUI descriptor tree"]
-        A --> C["capability calls (WIT contract)"]
+    subgraph apps["Mini-apps — one polyglot WASM module each"]
+        M1["Kanban (C#/Blazor)"]
+        M2["Chat (webview → SDUI later)"]
+        M3["team-X (Go / Rust)"]
+    end
+    M1 -->|"SDUI descriptor + capability calls (WIT)"| SHELL
+    M2 --> SHELL
+    M3 --> SHELL
+
+    subgraph shell["Org super-app = thin native shell (the host)"]
+        SHELL["launcher/nav · shared auth (device-code/OBO) · capabilities · storage · registry · WASM runtime"]
     end
 
-    guest -->|"SDUI descriptor (13 node types)"| H
-    guest -->|"cap_* imports / callback exports"| H
-
-    subgraph hosts["Thin native host (per platform)"]
-        H["MabelViewBuilder + WASM runtime + capability impls"]
-    end
-
-    H --> iOS["iOS · UIKit/SwiftUI (WasmKit dev / wasm2c AOT release)"]
-    H --> Android["Android · Views/Compose"]
-    H --> Win["Windows · WinUI 3 (wasmtime JIT)"]
-    H --> Linux["Linux · GTK4 (wasmtime JIT)"]
-
-    iOS --> N["Real native OS controls (scroll, a11y, IME, text selection — free)"]
-    Android --> N
-    Win --> N
-    Linux --> N
+    SHELL --> R["Native OS controls (scroll, a11y, IME, text selection — free)"]
+    R --> P1["iOS · UIKit/SwiftUI"]
+    R --> P2["Android · Views/Compose"]
+    R --> P3["Windows · WinUI 3"]
+    R --> P4["Linux · GTK4"]
 ```
 
 ---
@@ -55,22 +77,22 @@ flowchart TD
 
 1. **You author UI** in a high-level language. On the .NET path that's **Blazor/Razor**
    (`.razor`) driven by a custom renderer that emits a descriptor instead of HTML.
-2. **It compiles to one WASM module** — sandboxed, portable, no browser runtime.
-3. **The guest emits an SDUI descriptor** — a *semantic tree of controls* ("a scrollable
+2. **It compiles to a WASM module** — sandboxed, portable, no browser runtime.
+3. **The mini-app emits an SDUI descriptor** — a *semantic tree of controls* ("a scrollable
    list of cards, each with a title and a progress bar"), **not** a pixel display-list.
-4. **A thin native host loads the module** and walks the descriptor with a
-   `MabelViewBuilder`, instantiating **real native controls** of that OS.
+4. **The shell loads the module** and walks the descriptor with a `MabelViewBuilder`,
+   instantiating **real native controls** of that OS.
 5. **Interaction flows back semantically:** a tapped control returns `{action, id, data}`
-   — never pixel coordinates. Scroll, focus, accessibility, text selection, IME and
-   dynamic type come **for free** because they are genuine OS controls.
-6. **The app reaches the device** via capabilities: a WIT-defined ABI mediates camera,
+   — never pixel coordinates. Scroll, focus, accessibility, text selection, IME and dynamic
+   type come **for free** because they are genuine OS controls.
+6. **The mini-app reaches the device** via capabilities: a WIT-defined ABI mediates camera,
    GPS, notifications, biometrics, secure storage, share, clipboard, haptics.
 
 ### SDUI: semantic descriptor → native controls (not canvas, not WebView)
 
-Other frameworks either re-implement the entire UI stack on a canvas (Flutter) or
-wrap a WebView (Ionic, Tauri). Mabel does neither: it sends a **semantic description**
-and lets each OS render it natively. The descriptor is a versioned tree
+Other frameworks either re-implement the whole UI stack on a canvas (Flutter) or wrap a
+WebView (Ionic, Tauri). Mabel does neither: it sends a **semantic description** and lets
+each OS render it natively. The descriptor is a versioned tree
 (`Mabel.Wasi.Protocol/Sdui/Descriptor.cs`) with 13 node types (v1):
 
 `Screen · VStack · HStack · ScrollView · List · Card · Text · Button · Image · Badge ·
@@ -81,77 +103,144 @@ box/text styling, and an optional `OnTap` action. See **[ADR 0001](docs/adr/0001
 
 ### No Mac, ever — iOS via xtool
 
-Shipping to iPhone normally requires a Mac (Xcode). Mabel's hard constraint is **no
-Mac**, which is why it rejects MAUI, Flutter, Compose Multiplatform, and BlazorBindings.Maui
-for the iOS target — all need Mac/Xcode. Instead the iOS host is **hand-rolled Swift
-(UIKit/SwiftUI)**, built and signed from Linux/WSL with **[xtool](https://github.com/xtool-org/xtool)**.
-A hello-world IPA has already been built and deployed this way.
+Shipping to iPhone normally requires a Mac (Xcode). Mabel's hard constraint is **no Mac —
+as a principle, zero Apple toolchain** (not merely "don't buy a Mac"). That rejects MAUI,
+Flutter, Compose Multiplatform, Uno, and BlazorBindings.Maui for iOS — all need Mac/Xcode.
+Instead the iOS host is **hand-rolled Swift (UIKit/SwiftUI)**, built and signed from
+Linux/WSL with **[xtool](https://github.com/xtool-org/xtool)**. A hello-world IPA has
+already been built and deployed this way.
 
-### Dev vs Release: two runtimes, one module
+### Runtimes: what actually runs on the device
 
-iOS forbids JIT, which shapes the runtime story:
+iOS forbids JIT, and a spike proved exactly what runs where:
 
-| | Runtime | JIT? | Hot reload? | Speed | Why |
+| | Runtime | JIT? | HMR? | Guest language on device | Status |
 |---|---|---|---|---|---|
-| **Dev (iOS)** | **WasmKit** (interpreter, Swift) | No | **Yes** | interpreted | Interpreter can load/swap modules at runtime → enables HMR on-device |
-| **Release (iOS)** | **wasm2c → C → arm64** via xtool's toolchain | AOT | No | ~native | No Mac, no JIT, near-native speed. HMR is a dev-only feature |
-| **Dev/Release (desktop)** | **wasmtime** (Cranelift JIT) | Yes | **Yes** | full | Desktop has no JIT ban → the fastest inner loop |
+| **iOS (dev & live)** | **WasmKit** (pure-Swift interpreter) | No | Yes | **lean core-wasm only** (Rust/TinyGo/AssemblyScript/C) | **PROVEN on device, no Mac** |
+| **iOS (release, fast)** | wasm2c → C → arm64 (AOT) | AOT | No | lean core-wasm | aspirational (not proven) |
+| **Desktop** | wasmtime (Cranelift JIT) | Yes | Yes | broad, **incl. .NET/Blazor** | designed |
+| **Android** | wasmtime-JNI / Chicory (JIT) | Yes | Yes | broad | designed |
 
-The **same** `.wasm`, descriptor and WIT feed all of these. (WASM-on-device — WasmKit
-+ xtool + .NET→wasm without a Mac — is being validated by a spike.)
+> **Important, honest finding (spike, task #17):** **`.NET → wasm` does not run on
+> WasmKit.** .NET emits a WASI-Preview-2 Component + Mono; WasmKit is a core-module +
+> Preview-1 runtime → format mismatch, rejected. So the **live on-device guest on iOS is a
+> lean core-wasm language**, not .NET. **.NET/C#/Blazor's role is authoring, build-time
+> descriptor generation** (e.g. `board_gen` runs at build/WSL and emits descriptor JSON —
+> that's how today's proven iOS screen works) **and desktop/Android** (JIT runtimes that
+> can run .NET-wasm). The polyglot promise is real, with this per-platform asterisk.
 
 ### Targets
 
 - **Mobile:** **iOS** (UIKit/SwiftUI host, via xtool) and **Android** (Views/Compose host).
 - **Desktop:** **Windows** (WinUI 3) and **Linux** (GTK4). Desktop is the **primary HMR
   loop** (JIT, no device). See **[docs/desktop.md](docs/desktop.md)** / **[ADR 0004](docs/adr/0004-desktop.md)**.
-- **Deferred:** **macOS-desktop** (same no-Mac constraint — enters later as just another host).
+- **Deferred / blocked:** **macOS-desktop** (blocked by the no-Mac principle — enters later
+  as just another host). **Web** (SDUI→DOM host) is conceptually possible but not pursued.
 
-### Polyglot guests
+---
 
-Because the contract is WASM + a descriptor + a WIT ABI — not a language SDK — the app
-can be written in **any language that targets WASM/WASI**: C#/Blazor (primary),
-Go/TinyGo, Rust, and more. The host neither knows nor cares which one produced the module.
+## Super-app architecture
 
-### Capabilities: what the app can do on the device
+The shell is a **multi-module host**: it loads and manages the lifecycle of **several**
+mini-apps (load on demand, unload, hot-swap), each emitting its own SDUI descriptor, all
+rendered by the same native controls. It provides **shared services** — identity/auth,
+capabilities, storage (shared + per-mini-app), navigation, and shell-mediated messaging
+between mini-apps (they never see each other directly; the sandbox holds).
 
-The guest is sandboxed (no direct OS access). Native device APIs are reached through a
+**Incorporating Chat:** the fast path is a **webview mini-app** (Chat is already web →
+hosted in a `WKWebView`/`WebView2` alongside the SDUI-native mini-apps, reusing today's web
+with the shell's auth/capabilities), migrating to SDUI-native later. A **mixed** super-app
+(some mini-apps SDUI-native, some webview) is supported. The webview here is an optional
+per-mini-app shell, **not** the app's architecture — the "no WebView" thesis holds for
+Mabel-native.
+
+Full design: **[docs/super-app.md](docs/super-app.md)** · **[ADR 0005](docs/adr/0005-super-app.md)**.
+
+---
+
+## Runtime updates / OTA
+
+Because the shell is stable and mini-apps are content, features can ship **over the air**.
+Three levels (full design: **[docs/ota.md](docs/ota.md)** · **[ADR 0006](docs/adr/0006-ota.md)**):
+
+| Level | What changes | New logic? | Internal OTA | Public App Store |
+|---|---|---|---|---|
+| **1. Descriptor-only** | UI/content (the SDUI tree, text, layout, data) | No — pure data | ✅ always safe | ✅ fine (data, not code) |
+| **2. Mini-app WASM (logic)** | a new/updated `.wasm`, run by the **interpreter** | Yes | ✅ free | ⚠️ gray (see below) |
+| **3. Native shell** | the host/app itself | Yes (native) | ❌ store only | ❌ store only |
+
+**The AOT-vs-OTA tension (explicit):** AOT (baked) gives native speed but freezes the
+mini-app into the build → **not OTA**. The **interpreter** (WasmKit, proven on device)
+loads modules at runtime → **enables OTA of logic**, slower. Strategy: **core AOT** (fast,
+store) + **new mini-apps/updates via interpreter OTA** (internal) + **descriptor-OTA
+always** (fastest, safest, any channel).
+
+**Policy, honestly:** Org **enterprise/internal/MDM** = OTA is free (no App Review).
+**Public App Store** guideline **2.5.2** restricts downloading executable code; **JS has an
+explicit carve-out** (JSCore — why RN/CodePush/WeChat can), **WASM run by your own
+interpreter does not → gray zone.** Safe public paths: descriptor-OTA + webview mini-app +
+AOT-baked mini-apps.
+
+---
+
+## Polyglot authoring
+
+**The contract is the SDUI descriptor + WIT — not Blazor.** Blazor is just C#'s idiomatic
+way to produce the descriptor. Three layers (full design:
+**[docs/autoria-poliglota.md](docs/autoria-poliglota.md)** · **[ADR 0007](docs/adr/0007-autoria-poliglota.md)**):
+
+1. **Single source = WIT/schema** (descriptor + capabilities, `package mabel:*`).
+2. **Codegen (wit-bindgen) generates types + capability bindings per language** (C#, Go,
+   Rust) — the bulk of "speaking the protocol" is generated, not hand-written.
+3. **Idiomatic authoring sugar per language:**
+   - **C# (flagship):** Blazor/Razor + a custom renderer → descriptor (referencing a fork
+     of **BlazorBindings**, retargeting its MAUI backend to SDUI — **not** MAUI).
+   - **Go:** idiomatic builders (`VStack(Card(...))`) or a templ/gomponents-style lib;
+     TinyGo→wasm.
+   - **Rust:** macros/RSX, or adapt Dioxus/Leptos (already produce a virtual tree); Rust→wasm.
+
+A **thin per-language guest SDK** (generated types + render loop + sugar) sits on a
+**shared core** (host/renderer/capabilities/shell). Priority: **C#/Blazor first** (team
+Ledger, best DX); Go/Rust enabled by publishing the WIT + generator. The architecture
+**permits** all three; it does not require all three on day one. (On-device caveat: the
+live iOS guest is a lean-lang, not .NET — see the runtime table above.)
+
+---
+
+## Capabilities
+
+Mini-apps are sandboxed (no direct OS access). Native device APIs are reached through a
 **capability-based ABI**, modeled in **WIT** (`Mabel.Wasi.Protocol/Capabilities/wit/`,
 `package mabel:capabilities`) as the north-star, with the **real wire being a flattened
-WASI-Preview-1 core-module** today (same pattern as the render channel). Key design
-points (**[ADR 0002](docs/adr/0002-capabilities-abi.md)**, **[docs/capabilities-abi.md](docs/capabilities-abi.md)**):
+WASI-Preview-1 core-module** today. Key points (**[ADR 0002](docs/adr/0002-capabilities-abi.md)**,
+**[docs/capabilities-abi.md](docs/capabilities-abi.md)**):
 
-- **Async via request-id + single callback** (not Component Model futures, which are
-  immature on this stack): the guest passes a `reqId`, gets an immediate status, and the
-  host later calls one export `mabel_on_capability_result(reqId, …)`. The guest resolves
-  a `TaskCompletionSource` → idiomatic `await`.
+- **Async via request-id + single callback** (not Component Model futures — immature on
+  this stack): the guest passes a `reqId`, gets an immediate status, and the host later
+  calls one export `mabel_on_capability_result(reqId, …)` → the guest resolves a
+  `TaskCompletionSource` for idiomatic `await`.
 - **Security in two layers:** a **manifest** (host grants only declared capabilities —
   least authority by construction) plus the **OS consent prompt** at runtime.
-- **Free Apple account** cuts push notifications and iCloud/shared keychain (no paid App
-  ID); notifications are **local-only**, secure storage is **per-app**.
+- **Free Apple account** cuts push notifications and iCloud/shared keychain; notifications
+  are local-only, secure storage is per-app.
 
-### Authoring layer: Blazor without MAUI
+---
 
-On the .NET path you write **Blazor/Razor** components. A **custom renderer** turns the
-component tree into an SDUI descriptor (referencing **BlazorBindings** as a design
-reference — **not** MAUI, which needs a Mac). Blazor is the ergonomic front-end; the
-descriptor is the portable output.
-
-### Hot Module Reload + state preservation
+## Hot Module Reload + state preservation
 
 `mabel dev` watches files, recompiles the WASM, and signals the host over WebSocket; the
-host then **hot-swaps** the module and re-renders. The hard part is **state** — a swapped
-module gets fresh linear memory, so in-guest state is lost unless transported. Mabel's
-layered answer (**[docs/hmr-e-estado.md](docs/hmr-e-estado.md)** / **[ADR 0003](docs/adr/0003-hmr-e-estado.md)**):
+host then **hot-swaps** the module and re-renders. A swapped module gets fresh linear
+memory, so in-guest state is lost unless transported. The layered answer
+(**[docs/hmr-e-estado.md](docs/hmr-e-estado.md)** · **[ADR 0003](docs/adr/0003-hmr-e-estado.md)**):
 
-- **Default architecture — externalized state store (Elm/TEA):** app is `view(state)` +
-  `update(state, action)`; state lives in a **host store**, so it survives the swap by
-  construction. The only option that composes with hot-swap **and** polyglot guests, and
-  it already matches SDUI (the descriptor is a pure function of state).
-- **Transport — snapshot** (`serialize_state`/`restore_state`) moves the opaque state
-  blob across a swap.
-- **.NET optimization — Roslyn Hot Reload** applies IL deltas in-place for method-body
-  edits (no swap, 100% preserved).
+- **Default — externalized state store (Elm/TEA):** app is `view(state)` + `update(state,
+  action)`; state lives in a **host store** and survives the swap by construction. The only
+  option that composes with hot-swap **and** polyglot guests, and it already matches SDUI.
+- **Transport — snapshot** (`serialize_state`/`restore_state`) moves the opaque state blob
+  across a swap.
+- **.NET optimization — Roslyn Hot Reload** applies IL deltas in place for method-body
+  edits (no swap, 100% preserved) — **desktop/Android only** (not iOS: WasmKit can't run
+  .NET-wasm).
 - **Fallback — full reload** when the state shape changed incompatibly.
 
 Honest about what survives: **pure data** (screen/navigation/form/scroll/loaded models)
@@ -160,61 +249,103 @@ capability calls) do **not** — the host tears them down and the new module re-
 
 ---
 
+## Desktop, and the toolkit decision
+
+Desktop is a first-class target and the primary HMR loop (JIT runtime, no device). There
+is **no single cross-desktop toolkit of native OS controls**, so the choice is explicit:
+
+- **Native per-OS** (Windows = WinUI 3/Win32, Linux = GTK4/Qt, macOS = AppKit): 100% native
+  controls, honoring the thesis — but one view-builder per OS.
+- **Cross-desktop own-render toolkit** (Avalonia/Qt): one host, but it draws its own
+  controls (Skia-like) — not the OS's controls, which breaks the "native controls" principle
+  (the same reason the mobile canvas path was rejected).
+
+**Decision (ADR 0004):** lean **native-per-OS where it matters — Windows and Linux first
+(no Mac); macOS deferred by the Mac wall.** Avalonia is allowed as a pragmatic single-host
+**preview/scaffold** during bring-up, not as the destination. Runtime: **wasmtime**
+(Cranelift JIT). See **[docs/desktop.md](docs/desktop.md)**.
+
+---
+
+## Status — honest, per platform
+
+Legend: **PROVEN** (runs, validated) · **DESIGNED** (spec/ADR, not built) · **TODO** (not
+started) · **BLOCKED** (external blocker).
+
+The **SDUI descriptor contract** and the **capabilities WIT** are platform-neutral and
+shared: contract **DESIGNED (v1 committed)**. Per-platform pieces:
+
+| Layer | iOS | Android | Windows | Linux | macOS | Web |
+|---|---|---|---|---|---|---|
+| Host renders descriptor → native controls | **PROVEN**¹ | DESIGNED | DESIGNED | DESIGNED | BLOCKED² | TODO |
+| WASM runtime (live guest on device) | **PROVEN** (WasmKit, lean-lang)³ | DESIGNED (JIT) | DESIGNED (wasmtime) | DESIGNED (wasmtime) | BLOCKED² | TODO |
+| Capabilities (WIT ABI) | DESIGNED | DESIGNED | DESIGNED | DESIGNED | BLOCKED² | TODO |
+| Build without a Mac | **PROVEN** (xtool) | N/A | N/A | N/A | BLOCKED² | N/A |
+| HMR (hot reload) | DESIGNED (WasmKit swap) | DESIGNED | DESIGNED (primary loop) | DESIGNED (primary loop) | BLOCKED² | TODO |
+| Super-app shell (multi mini-app) | DESIGNED | DESIGNED | DESIGNED | DESIGNED | BLOCKED² | TODO |
+
+¹ descriptor → UIKit with native scroll + tap validated on device (the Kanban proof); final
+on-device sign-off gates the consolidated PR.
+² blocked by the no-Mac principle (needs an Apple toolchain).
+³ **lean core-wasm only** (Rust/TinyGo/AssemblyScript/C). **.NET-wasm is not supported on
+WasmKit** — .NET is for authoring, build-time descriptor generation, and desktop/Android.
+
+---
+
 ## How Mabel compares
 
-| Framework | UI rendering | App language | iOS build without a Mac? |
-|---|---|---|---|
-| **Mabel** | **Native OS controls** (SDUI) | **Any → WASM** (polyglot) | **Yes (xtool)** |
-| Flutter | Own engine (Skia canvas) | Dart | No (needs Mac/Xcode) |
-| React Native | Native controls | JavaScript | No |
-| .NET MAUI | Native controls | C# only | No |
-| Uno Platform | WinUI XAML everywhere | C# only | No |
-| Compose Multiplatform | Own (Skia), native on Android | Kotlin only | No |
-| Kotlin Multiplatform | Per-platform native (UI not shared) | Kotlin only | No |
-| Tauri | WebView (HTML/CSS/JS) | Rust + web front-end | No |
+| Framework | UI rendering | App language | iOS build without a Mac? | Super-app / OTA |
+|---|---|---|---|---|
+| **Mabel** | **Native OS controls** (SDUI) | **Any → WASM** (polyglot) | **Yes (xtool)** | **Yes (WASM mini-apps)** |
+| Flutter | Own engine (Skia canvas) | Dart | No | via add-to-app, no sandbox model |
+| React Native | Native controls | JavaScript | No | CodePush (JS OTA) |
+| .NET MAUI | Native controls | C# only | No | No |
+| Uno Platform | WinUI XAML everywhere | C# only | No | No |
+| Compose Multiplatform | Own (Skia), native on Android | Kotlin only | No | No |
+| Kotlin Multiplatform | Per-platform native (UI not shared) | Kotlin only | No | No |
+| Tauri | WebView (HTML/CSS/JS) | Rust + web front-end | No | web assets |
+| WeChat mini-programs | WebView | JavaScript only | (host app is native) | Yes (JS mini-programs) |
 
-Mabel's differentiator is the **intersection**: *one polyglot WASM module* → *real
-native OS controls* → *built without a Mac*. No other framework in the table sits at all
-three points at once.
+Mabel's differentiator is the **intersection**: *one polyglot WASM module* → *real native
+OS controls* → *built without a Mac* → *as a sandboxed super-app mini-app*. No other row
+sits at all four points.
 
 Trade-off, stated honestly: SDUI's expressive power is bounded by its node set. Bespoke
 visuals (custom-drawn charts, game-like UI) would need a schema extension or a `Canvas`
-escape node — out of scope for v1. If your product is mostly custom pixels, a canvas
-framework may fit better; Mabel targets control-based app UI (forms, lists, boards,
-dashboards).
+escape node — out of scope for v1. Mabel targets control-based app UI (forms, lists,
+boards, dashboards).
 
 ---
 
 ## Current status — proven vs. in design
 
-Mabel is early. This section is deliberately honest.
-
 **Proven / working:**
-- CLI (`mabel`, .NET 10 AOT), dev server with file-watch + WebSocket reload, renderer
-  with a green test suite.
+- CLI (`mabel`, .NET 10 AOT), dev server (file-watch + WebSocket reload), renderer with a
+  green test suite.
 - iOS IPA **built and deployed from Linux without a Mac** via xtool (hello-world).
-- Original pixel display-list render on iOS (Core Graphics) — the spike that motivated
-  the pivot to SDUI (a canvas has no scroll/a11y/IME for free). Kept for reference,
-  **superseded** by SDUI.
+- **WasmKit runs on a physical iPhone via xtool, no Mac** (spike #17) — pure-Swift
+  interpreter, arm64, ~4.6 MB (gotcha: pin `swift-system` 1.5.0). It runs **lean core-wasm**;
+  **.NET-wasm is rejected** (Preview-2/Mono vs core-module/Preview-1).
+- Original pixel display-list render on iOS (Core Graphics) — the spike that motivated the
+  SDUI pivot. Kept for reference, **superseded** by SDUI.
 
 **In design (this consolidation + sibling branches):**
-- **SDUI descriptor → native UIKit** (ADR 0001): schema committed; iOS view-builder
-  drafted on `feat/sdui-descriptor`; not yet proven on device.
-- **Capabilities ABI** (ADR 0002): WIT + contracts + manifest model; design only.
-- **HMR + state** (ADR 0003) and **Desktop host** (ADR 0004): design in this branch.
-
-**Being validated (spike):**
-- **WASM-on-device**: WasmKit interpreter + xtool + .NET→wasm on a physical iPhone,
-  no Mac. This spike gates the dev runtime, HMR-on-iOS, and the release wasm2c path.
+- **SDUI descriptor → native UIKit** (ADR 0001): schema committed; iOS view-builder drafted
+  on `feat/sdui-descriptor`; on-device tap-through is the Kanban proof, final sign-off pending.
+- **Capabilities ABI** (ADR 0002), **HMR + state** (ADR 0003), **Desktop** (ADR 0004),
+  **Super-app** (ADR 0005), **OTA** (ADR 0006), **Polyglot authoring** (ADR 0007).
 
 **ADR index:** [0001 SDUI](docs/adr/0001-sdui-descriptor.md) ·
-[0002 Capabilities ABI](docs/adr/0002-capabilities-abi.md) ·
+[0002 Capabilities](docs/adr/0002-capabilities-abi.md) ·
 [0003 HMR + state](docs/adr/0003-hmr-e-estado.md) ·
-[0004 Desktop](docs/adr/0004-desktop.md)
+[0004 Desktop](docs/adr/0004-desktop.md) ·
+[0005 Super-app](docs/adr/0005-super-app.md) ·
+[0006 OTA](docs/adr/0006-ota.md) ·
+[0007 Polyglot authoring](docs/adr/0007-autoria-poliglota.md)
 
-> Note: ADRs 0001 and 0002 currently live on their own feature branches
-> (`feat/sdui-descriptor`, `feat/mabel-capabilities-abi`); 0003/0004 and this README are
-> on `feat/mabel-arch-consolidation`. The links resolve once the branches are integrated.
+> Note: ADRs 0001/0002 live on their own feature branches (`feat/sdui-descriptor`,
+> `feat/mabel-capabilities-abi`); 0003–0007 and this README are on
+> `feat/mabel-arch-consolidation`. Links resolve once the branches are integrated.
 
 ---
 
@@ -226,34 +357,30 @@ mabel-framework/
   src/
     Mabel.Wasi.Protocol/       # Contracts guest<->host
       Protocol.cs              #   legacy pixel display-list (reference; superseded by SDUI)
-      WasiContract.cs          #   render function names
       Sdui/Descriptor.cs       #   SDUI semantic tree (13 node types)  [ADR 0001]
       Capabilities/            #   WIT + flattened core-module ABI     [ADR 0002]
-        wit/                   #     mabel:capabilities (camera, location, ...)
-        CapabilityContract.cs  #     flattened p1 wire
-        CapabilityManifest.cs  #     capability manifest model
     Mabel.Renderer/            # ICanvas + MabelRenderer (legacy display-list path)
     Mabel.Core/                # Features, Ports, Infrastructure (vertical slice + hexagonal)
       Features/DevServer/      #   HTTP + WebSocket hot-reload server
     Mabel.Cli/                 # `mabel` CLI (AOT)
-    Mabel.Host.Ios/            # Swift host (UIKit view-builder + WASM runtime)
+    Mabel.Host.Ios/            # Swift host (UIKit view-builder + WasmKit runtime)
   docs/
-    adr/0001..0004             # architecture decision records
-    sdui-*, capabilities-abi.md, hmr-e-estado.md, desktop.md
+    adr/0001..0007             # architecture decision records
+    sdui-*, capabilities-abi.md, hmr-e-estado.md, desktop.md, super-app.md, ota.md,
+    autoria-poliglota.md
   samples/                     # hello-world, hello-world-ios
   tests/                       # Mabel.Core.Tests, Mabel.Renderer.Tests
 ```
 
 Architecture: **vertical slice** (each feature self-contained under `Features/`) +
-**hexagonal/ports-adapters** (all I/O behind `IShellExecutor`/`IFileSystem`; real
-adapters in `Infrastructure/`, fakes in tests). Only two .NET app projects: `Mabel.Core`
-and the thin `Mabel.Cli`.
+**hexagonal/ports-adapters** (all I/O behind `IShellExecutor`/`IFileSystem`; fakes in
+tests). Only two .NET app projects: `Mabel.Core` and the thin `Mabel.Cli`.
 
 ## CLI
 
 ```bash
 mabel doctor            # Check environment (tools, PATH, WSL detection)
-mabel setup             # Install deps (.NET 10, Swift, xtool, wasmtime, WasmKit)
+mabel setup             # Install deps (.NET 10, Swift, xtool, WasmKit, wasmtime)
 mabel create <name>     # Scaffold a new Mabel project
 mabel deploy [path]     # Build and run on a device/emulator
 mabel dev [path]        # Dev server with hot reload (Expo-style)
@@ -281,10 +408,11 @@ Developed and tested on **Linux / WSL2** (Ubuntu). For iOS-from-Linux over USB, 
 
 ## Technology stack
 
-- **.NET 10** — CLI (AOT), Blazor authoring, renderer, protocol
-- **WASM/WASI** — the app module; **WasmKit** (iOS dev interp.), **wasm2c→arm64** (iOS
-  release AOT), **wasmtime** (desktop JIT)
-- **WIT** — capability contracts (`package mabel:capabilities`)
+- **.NET 10** — CLI (AOT), Blazor authoring, build-time descriptor generation, renderer,
+  protocol, desktop host
+- **WASM/WASI** — the mini-app module; **WasmKit** (iOS live interpreter, lean-lang guests),
+  **wasmtime** (desktop/Android JIT, incl. .NET-wasm)
+- **WIT** — descriptor + capability contracts (`package mabel:*`), wit-bindgen codegen
 - **Swift** (UIKit/SwiftUI) — iOS host · **WinUI 3 / GTK4** — desktop hosts
 - **xtool** — iOS build & deploy from Linux (no Mac)
 - **xunit v3** — tests
@@ -292,7 +420,7 @@ Developed and tested on **Linux / WSL2** (Ubuntu). For iOS-from-Linux over USB, 
 ## Contributing
 
 Contributions welcome — open an issue or PR. Architecture decisions are recorded as ADRs
-under `docs/adr/`; please read the relevant ADR before proposing changes to a subsystem.
+under `docs/adr/`; read the relevant ADR before proposing changes to a subsystem.
 
 ## License
 
