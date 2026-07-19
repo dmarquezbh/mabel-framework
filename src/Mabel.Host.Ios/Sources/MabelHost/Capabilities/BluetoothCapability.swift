@@ -29,10 +29,10 @@ public final class BluetoothCapability: NSObject, BluetoothProviding, CBCentralM
     private var connectionStreams: [UInt64: String] = [:]                                  // subId → peripheralId
 
     // One-shots pendentes
-    private var connects: [String: (requestId: UInt64)] = [:]                              // peripheralId → reqId
+    private var connects: [String: UInt64] = [:]                                           // peripheralId → reqId
     private var discovers: [String: (requestId: UInt64, remaining: Int, services: [BleService])] = [:]
-    private var reads: [String: (requestId: UInt64)] = [:]                                 // "pid|charUUID" → reqId
-    private var writes: [String: (requestId: UInt64)] = [:]
+    private var reads: [String: UInt64] = [:]                                              // "pid|charUUID" → reqId
+    private var writes: [String: UInt64] = [:]
 
     public override init() {
         super.init()
@@ -78,7 +78,7 @@ public final class BluetoothCapability: NSObject, BluetoothProviding, CBCentralM
     public func connect(_ responder: CapabilityResponder, requestId: UInt64, peripheralId: String) {
         lock.lock(); responderRef = responder
         guard let p = peripherals[peripheralId] else { lock.unlock(); responder.respond(requestId, .bluetooth, .unavailable, payload: nil); return }
-        connects[peripheralId] = (requestId); lock.unlock()
+        connects[peripheralId] = requestId; lock.unlock()
         p.delegate = self
         central.connect(p, options: nil)
     }
@@ -100,7 +100,7 @@ public final class BluetoothCapability: NSObject, BluetoothProviding, CBCentralM
         guard let p = peripherals[peripheralId], let ch = findChar(p, characteristic) else {
             lock.unlock(); responder.respond(requestId, .bluetooth, .unavailable, payload: nil); return
         }
-        reads["\(peripheralId)|\(characteristic.lowercased())"] = (requestId); lock.unlock()
+        reads["\(peripheralId)|\(characteristic.lowercased())"] = requestId; lock.unlock()
         p.readValue(for: ch)
     }
 
@@ -109,7 +109,7 @@ public final class BluetoothCapability: NSObject, BluetoothProviding, CBCentralM
         guard let p = peripherals[peripheralId], let ch = findChar(p, characteristic) else {
             lock.unlock(); responder.respond(requestId, .bluetooth, .unavailable, payload: nil); return
         }
-        if withResponse { writes["\(peripheralId)|\(characteristic.lowercased())"] = (requestId) }
+        if withResponse { writes["\(peripheralId)|\(characteristic.lowercased())"] = requestId }
         lock.unlock()
         p.writeValue(value, for: ch, type: withResponse ? .withResponse : .withoutResponse)
         if !withResponse { responder.respond(requestId, .bluetooth, .ok, payload: nil) }
@@ -189,14 +189,14 @@ public final class BluetoothCapability: NSObject, BluetoothProviding, CBCentralM
         let pid = peripheral.identifier.uuidString
         lock.lock(); let pending = connects.removeValue(forKey: pid); let responder = responderRef
         let connStreams = connectionStreams.filter { $0.value == pid }; lock.unlock()
-        pending.map { responder?.respond($0.requestId, .bluetooth, .ok, payload: nil) }
+        pending.map { responder?.respond($0, .bluetooth, .ok, payload: nil) }
         for (subId, _) in connStreams { responder?.emit(subId, .bluetooth, BleEventKind.connectionChanged.rawValue, payload: Data([1])) }
     }
 
     public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         let pid = peripheral.identifier.uuidString
         lock.lock(); let pending = connects.removeValue(forKey: pid); let responder = responderRef; lock.unlock()
-        pending.map { responder?.respond($0.requestId, .bluetooth, .error, payload: nil) }
+        pending.map { responder?.respond($0, .bluetooth, .error, payload: nil) }
     }
 
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
@@ -254,7 +254,7 @@ public final class BluetoothCapability: NSObject, BluetoothProviding, CBCentralM
         let responder = responderRef
         lock.unlock()
         if let read {
-            responder?.respond(read.requestId, .bluetooth, error == nil ? .ok : .error, payload: error == nil ? value : nil)
+            responder?.respond(read, .bluetooth, error == nil ? .ok : .error, payload: error == nil ? value : nil)
         }
         if let notifySub, error == nil {
             responder?.emit(notifySub, .bluetooth, BleEventKind.characteristicChanged.rawValue, payload: value)
@@ -265,7 +265,7 @@ public final class BluetoothCapability: NSObject, BluetoothProviding, CBCentralM
         let pid = peripheral.identifier.uuidString
         let key = "\(pid)|\(characteristic.uuid.uuidString.lowercased())"
         lock.lock(); let write = writes.removeValue(forKey: key); let responder = responderRef; lock.unlock()
-        write.map { responder?.respond($0.requestId, .bluetooth, error == nil ? .ok : .error, payload: nil) }
+        write.map { responder?.respond($0, .bluetooth, error == nil ? .ok : .error, payload: nil) }
     }
 }
 #endif

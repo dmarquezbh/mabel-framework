@@ -96,7 +96,8 @@ public final class CameraCapability: NSObject, CameraProviding {
             picker.cameraDevice = options.facing == .front ? .front : .rear
             picker.allowsEditing = options.allowEdit
             picker.mediaTypes = options.kind == .video ? ["public.movie"] : ["public.image"]
-            let coord = ImagePickerCoordinator(quality: options.quality) { [weak self] result in
+            var coord: ImagePickerCoordinator!
+            coord = ImagePickerCoordinator(quality: options.quality) { [weak self] result in
                 switch result {
                 case .success(let asset):
                     responder.respond(requestId, .camera, .ok, payload: CapabilityJSON.encode(asset))
@@ -105,7 +106,7 @@ public final class CameraCapability: NSObject, CameraProviding {
                 case .failure:
                     responder.respond(requestId, .camera, .error, payload: nil)
                 }
-                if let self { self.release(coord) }
+                if let self, let coord { self.release(coord) }
             }
             picker.delegate = coord
             self.retain(coord)
