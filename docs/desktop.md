@@ -135,6 +135,23 @@ registrados como **futuro**, não v1:
 v1 do desktop mira **paridade com o mobile** (renderiza a mesma árvore SDUI com scroll
 e tap nativos); a extensão do schema pra janelas/menus/teclado é fase posterior.
 
+## 7b. Distribuição + auto-update (diferencial)
+
+Duas camadas (ver também `docs/ota.md`):
+
+- **Conteúdo (WASM + descritores) = OTA do servidor → shell recarrega:** instantâneo,
+  minúsculo, sem reinstalar, sem restart (hot-swap). **No desktop é 100% LIVRE** — não há
+  loja obrigatória (Win/Linux/macOS-direto), então o cinza 2.5.2 do iOS **não existe**: OTA
+  de descritor **e** de lógica-wasm liberado.
+- **Shell nativo (raro) = updater padrão por-OS:** Windows: MSIX / Squirrel.Windows; Linux:
+  **AppImage + AppImageUpdate (delta/zsync)** / Flatpak / Snap / apt; macOS: **Sparkle**
+  (⚠️ precisa notarização — amarra no spike macOS via API `notarytool`).
+
+**Diferencial:** Electron/Tauri **re-baixam o binário inteiro** a cada update; o Mabel
+**re-baixa só o conteúdo** (KB, instantâneo, sem fechar). **Robustez:** canais
+stable/beta/canary + rollout gradual + rollback + **updates assinados** (verifica assinatura
+antes de aplicar; gerência de chave).
+
 ## 8. Escopo / não-metas e decisões pendentes
 
 **É (design):** host desktop .NET embutindo wasmtime (JIT); mapa SDUI → WinUI/GTK;

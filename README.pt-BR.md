@@ -113,30 +113,46 @@ buildado e instalado assim.
 
 ### Runtimes: o que roda de fato no device
 
-O iOS proíbe JIT, e um spike provou exatamente o que roda onde:
+O iOS proíbe JIT, e um spike (task #17, v2) provou exatamente o que roda onde — **no device,
+sem Mac.** Um app pode carregar **os dois** runtimes iOS ao mesmo tempo (ver abaixo):
 
 | | Runtime | JIT? | HMR? | Linguagem do guest no device | Status |
 |---|---|---|---|---|---|
 | **iOS (dev & live)** | **WasmKit** (interpretador puro-Swift) | Não | Sim | **só lean core-wasm** (Rust/TinyGo/AssemblyScript/C) | **PROVADO no device, sem Mac** |
-| **iOS (release, rápido)** | wasm2c → C → arm64 (AOT) | AOT | Não | lean core-wasm | aspiracional (não provado) |
+| **iOS (release, rápido)** | **wasm2c → C → clang do xtool → arm64** (AOT) | AOT | Não | lean core-wasm | **PROVADO no device, sem Mac (~163× vs interp)** |
 | **Desktop** | wasmtime (Cranelift JIT) | Sim | Sim | amplo, **incl. .NET/Blazor** | desenhado |
 | **Android** | wasmtime-JNI / Chicory (JIT) | Sim | Sim | amplo | desenhado |
 
-> **Achado importante e honesto (spike, task #17):** **`.NET → wasm` não roda no WasmKit.**
-> O .NET emite um Component WASI-Preview-2 + Mono; o WasmKit é um runtime core-module +
-> Preview-1 → mismatch de formato, rejeitado. Então o **guest live-on-iOS é um lean
-> core-wasm**, não .NET. **O papel do .NET/C#/Blazor é autoria, geração de descritor em
-> build-time** (ex.: o `board_gen` roda no build/WSL e emite JSON de descritor — é assim que
-> a tela iOS provada hoje funciona) **e desktop/Android** (runtimes JIT que rodam .NET-wasm).
-> A promessa poliglota é real, com esse asterisco por plataforma.
+Os dois caminhos iOS rodaram **lado a lado no mesmo app no iPhone test-device-1**, cross-compilados e
+instalados a partir do Linux sem Mac. O caminho AOT é **~163×** mais rápido que o
+interpretador num bench trivial (compute pesado fica ~10–50×).
 
-### Alvos
+> **Achado importante e honesto (spike):** **`.NET → wasm` não roda no WasmKit.** O .NET
+> emite um Component WASI-Preview-2 + Mono (~3,34 MB); o WasmKit é um runtime core-module +
+> Preview-1 → mismatch de formato, rejeitado (flags de tamanho maxadas não ajudam — o peso é
+> o runtime Mono, e o `wasm-opt` rejeita o component). Um core module Rust, por outro lado, é
+> ~55 B e roda. Então o **guest live-on-iOS é um lean core-wasm** (Rust/TinyGo/AssemblyScript/
+> C), não .NET. **`NativeAOT-LLVM` é o caminho certo de .NET-no-device mas está bloqueado no
+> WSL hoje** (SDK experimental + ~1 GB de emsdk) → fase própria. **O papel do .NET/C#/Blazor é
+> autoria, geração de descritor em build-time** (ex.: o `board_gen` roda no build/WSL e emite
+> JSON de descritor — é assim que a tela iOS provada hoje funciona; o renderer Blazor roda
+> headless/sem-browser, precedente HtmlRenderer/BlazorBindings) **e desktop/Android** (runtimes
+> JIT que rodam .NET-wasm). A promessa poliglota é real, com esse asterisco por plataforma.
+
+### Alvos — quatro famílias de host
 
 - **Mobile:** **iOS** (host UIKit/SwiftUI, via xtool) e **Android** (host Views/Compose).
 - **Desktop:** **Windows** (WinUI 3) e **Linux** (GTK4). Desktop é o **loop primário de HMR**
   (JIT, sem device). Ver **[docs/desktop.md](docs/desktop.md)** / **[ADR 0004](docs/adr/0004-desktop.md)**.
-- **Adiado / bloqueado:** **macOS-desktop** (bloqueado pelo princípio sem-Mac — entra depois
-  como só mais um host). **Web** (host SDUI→DOM) é conceitualmente possível, mas não perseguido.
+- **Web:** um **host web renderiza o MESMO descritor em DOM / web-components** — alvo de 1ª
+  classe de verdade, não só preview. Roda o guest no runtime WASM nativo do browser;
+  capabilities só-device (câmera/GPS) são **mockadas** no host web pro dev.
+- **A confirmar:** **macOS-desktop** — build sem-Mac é plausível, mas não é caminho pavimentado
+  do xtool ainda; precisa de spike (task #21).
+
+Mesmo descritor em tudo, **renderizado por plataforma** — nativo parece nativo, web parece
+web. **Não** é pixel-idêntico entre alvos, by design: é o ponto do SDUI (mesma tela, estrutura
+e comportamento; a cara de cada plataforma).
 
 ---
 
@@ -171,11 +187,18 @@ níveis (design completo: **[docs/ota.md](docs/ota.md)** · **[ADR 0006](docs/ad
 | **2. Mini-app WASM (lógica)** | um `.wasm` novo/atualizado, rodado pelo **interpretador** | Sim | ✅ livre | ⚠️ cinza (ver abaixo) |
 | **3. Shell nativo** | o host/app em si | Sim (nativo) | ❌ só loja | ❌ só loja |
 
-**A tensão AOT-vs-OTA (explícita):** AOT (baked) dá velocidade nativa mas congela o mini-app
-no build → **não é OTA**. O **interpretador** (WasmKit, provado no device) carrega módulos em
-runtime → **habilita OTA de lógica**, mais lento. Estratégia: **core AOT** (rápido, loja) +
-**mini-apps novos/updates via interpretador OTA** (interno) + **descritor-OTA sempre** (mais
-rápido, mais seguro, qualquer canal).
+**Os dois runtimes coexistem num app (esse é o pulo do gato):** um app leva um **core AOT
+baked** (wasm2c→nativo — rápido, offline, store-clean) **E** o **interpretador WasmKit** pros
+mini-apps/lógica OTA'd — **não** é um OU outro. Assim mantém WASM rápido (baked) *e* tem OTA
+(descritor sempre + lógica-wasm interpretada). Os dois caminhos foram provados lado a lado no
+device.
+
+**A tensão AOT-vs-OTA (física honesta):** pra *um mesmo* pedaço de código, "velocidade nativa
++ OTA de lógica *nova* + App Store pública" não coexistem — rápido = baked = sem OTA; OTA =
+interpretado = cinza-público. **Interno Org não tem esse limite.** E o **descritor-OTA**
+(instantâneo, sempre store-safe) cobre o grosso da mudança de qualquer forma. Estratégia:
+**core AOT baked** (rápido/loja) + **interpretador pros mini-apps OTA'd** (interno) +
+**descritor-OTA sempre** (mais rápido, mais seguro, qualquer canal).
 
 **Policy, honesto:** Org **enterprise/interno/MDM** = OTA livre (não passa por App Review).
 A **App Store pública** (guideline **2.5.2**) restringe baixar código executável; **JS tem
@@ -287,6 +310,11 @@ Honesto sobre o que sobrevive: **dado puro** (tela/navegação/form/scroll/dados
 sobrevive; **ligações vivas com o SO** (sessões de câmera, streams de GPS, sockets, timers,
 chamadas de capability em voo) **não** — o host as encerra e o módulo novo re-subscreve.
 
+**HMR multi-alvo simultâneo (a DX matadora):** o dev-server faz broadcast de cada rebuild por
+WebSocket pra **todos os hosts conectados ao mesmo tempo** — browser + app no device + desktop
+re-renderizam juntos na mesma edição, com o store externalizado sobrevivendo ao diff. Uma
+edição, ao vivo em todos os alvos — o loop Flutter-multi-device, mas via descritor compartilhado.
+
 ---
 
 ## Desktop, e a decisão de toolkit
@@ -301,9 +329,32 @@ um toolkit único cross-desktop de controles nativos do SO**, então a escolha �
   nativos" (mesma razão pela qual o canvas foi rejeitado no mobile).
 
 **Decisão (ADR 0004):** mirar **nativo por-OS onde importa — Windows e Linux primeiro (sem
-Mac); macOS adiado pelo muro do Mac.** Avalonia é permitido como **preview/andaime** de host
-único no bring-up, não como destino. Runtime: **wasmtime** (Cranelift JIT). Ver
+Mac); macOS a confirmar (spike de build sem-Mac).** Avalonia é permitido como **preview/andaime**
+de host único no bring-up, não como destino. Runtime: **wasmtime** (Cranelift JIT). Ver
 **[docs/desktop.md](docs/desktop.md)**.
+
+### Distribuição + auto-update (diferencial de verdade)
+
+Split em duas camadas:
+
+- **Conteúdo (WASM + descritores): OTA do servidor → shell recarrega** — instantâneo, minúsculo,
+  sem reinstalar, sem restart (hot-swap). **No desktop isso é 100% livre:** não há loja
+  obrigatória no Windows/Linux/macOS-direto, então o cinza 2.5.2 do iOS **não existe** — OTA de
+  descritores *e* lógica-wasm é irrestrito.
+- **Shell nativo (raro): o updater padrão da plataforma** — Windows: MSIX / Squirrel.Windows;
+  Linux: **AppImage + AppImageUpdate (delta/zsync)** / Flatpak / Snap / apt; macOS: **Sparkle**
+  (⚠️ precisa notarização — amarra no spike macOS via API `notarytool`).
+
+**Vs. os concorrentes:** Electron/Tauri **re-baixam o binário inteiro** a cada update
+(electron-updater / Tauri updater); **o Mabel re-baixa só o conteúdo** (KB, instantâneo, sem
+fechar). Separar um shell que muda pouco de um conteúdo que muda muito é o ganho.
+
+**Robustez:** canais stable/beta/canary + rollout gradual + rollback (guarda a versão anterior)
++ **updates assinados** (verifica a assinatura do wasm/shell antes de aplicar — senão vira vetor
+de ataque; exige gerência de chave).
+
+**Honesto:** o updater de shell por-OS é trabalho real e padrão; macOS-shell-update = Sparkle +
+notarização (ferramentas Apple, alcançáveis via API sem Mac — pendente do spike).
 
 ---
 
@@ -317,20 +368,22 @@ compartilhados: contrato **DESENHADO (v1 commitado)**. Peças por plataforma:
 
 | Camada | iOS | Android | Windows | Linux | macOS | Web |
 |---|---|---|---|---|---|---|
-| Host renderiza descritor → controles nativos | **PROVADO**¹ | DESENHADO | DESENHADO | DESENHADO | A-CONFIRMAR² | A-FAZER |
-| Runtime WASM (guest live no device) | **PROVADO** (WasmKit, lean-lang)³ | DESENHADO (JIT) | DESENHADO (wasmtime) | DESENHADO (wasmtime) | A-CONFIRMAR² | A-FAZER |
-| Capabilities (ABI WIT) | DESENHADO | DESENHADO | DESENHADO | DESENHADO | A-CONFIRMAR² | A-FAZER |
+| Host renderiza descritor → controles nativos | **PROVADO**¹ | DESENHADO | DESENHADO | DESENHADO | A-CONFIRMAR² | DESENHADO (→DOM) |
+| Runtime WASM (guest live no device) | **PROVADO** (WasmKit interp + wasm2c AOT)³ | DESENHADO (JIT) | DESENHADO (wasmtime) | DESENHADO (wasmtime) | A-CONFIRMAR² | DESENHADO (nativo do browser) |
+| Capabilities (ABI WIT) | DESENHADO | DESENHADO | DESENHADO | DESENHADO | A-CONFIRMAR² | DESENHADO (mockado) |
 | Build sem Mac | **PROVADO** (xtool) | N/A | N/A | N/A | A-CONFIRMAR² | N/A |
-| HMR (hot reload) | DESENHADO (swap WasmKit) | DESENHADO | DESENHADO (loop primário) | DESENHADO (loop primário) | A-CONFIRMAR² | A-FAZER |
-| Shell super-app (multi mini-app) | DESENHADO | DESENHADO | DESENHADO | DESENHADO | A-CONFIRMAR² | A-FAZER |
+| HMR (hot reload) | DESENHADO (swap WasmKit) | DESENHADO | DESENHADO (loop primário) | DESENHADO (loop primário) | A-CONFIRMAR² | DESENHADO (broadcast) |
+| Shell super-app (multi mini-app) | DESENHADO | DESENHADO | DESENHADO | DESENHADO | A-CONFIRMAR² | DESENHADO |
 
-¹ descritor → UIKit com **card-flash + scroll nativos validado no device** (a prova do
-Kanban, confirmada pelo Daniel).
+¹ descritor → UIKit com **card-flash + scroll nativos validado no device**, mais 5 taps
+logando `[Kanban] open-card card:X` em colunas diferentes (a prova do Kanban, confirmada pelo Daniel).
 ² **macOS-desktop = a confirmar, não bloqueado:** build sem-Mac é plausível via
 cross-compile Swift/AppKit + `apple-codesign`/`rcodesign` + API de notarização, mas não é
 caminho pavimentado do xtool ainda → precisa de spike (task #21).
-³ **só lean core-wasm** (Rust/TinyGo/AssemblyScript/C). **.NET-wasm não é suportado no
-WasmKit** — .NET fica em autoria, geração de descritor em build-time, e desktop/Android.
+³ **os dois provados no device, sem Mac:** interpretador WasmKit (dev/OTA) **e** wasm2c→arm64
+AOT (release, ~163× mais rápido) rodaram lado a lado. **só lean core-wasm** (Rust/TinyGo/
+AssemblyScript/C); **.NET-wasm não é suportado no WasmKit** — .NET fica em autoria, geração de
+descritor em build-time, e desktop/Android. Web roda o guest no engine WASM nativo do browser.
 
 ---
 
@@ -400,22 +453,25 @@ boards, dashboards).
 
 ## Status atual — provado vs. em design
 
-**Provado / funcionando:**
+**Provado / funcionando (no device, sem Mac):**
 - CLI (`mabel`, .NET 10 AOT), dev server (file-watch + reload por WebSocket), renderer com
   suíte de testes verde.
 - IPA iOS **buildado e instalado a partir do Linux sem Mac** via xtool (hello-world).
-- **WasmKit roda num iPhone físico via xtool, sem Mac** (spike #17) — interpretador
-  puro-Swift, arm64, ~4.6 MB (gotcha: pin `swift-system` 1.5.0). Roda **lean core-wasm**;
-  **.NET-wasm é rejeitado** (Preview-2/Mono vs core-module/Preview-1).
+- **Descritor SDUI → UIKit nativo num iPhone físico** (ADR 0001): card-flash + scroll nativo
+  + 5 taps logando `[Kanban] open-card card:X` em colunas diferentes (confirmado pelo Daniel).
+- **Os dois runtimes WASM do iOS no device** (spike #17 v2): **WasmKit** interpretador
+  (puro-Swift, arm64, ~4.6 MB; pin `swift-system` 1.5.0) **e** **wasm2c→arm64 AOT** via clang
+  do xtool, lado a lado, **~163×** AOT-vs-interp num bench trivial. Roda **lean core-wasm**
+  (core Rust ~55 B); **.NET-wasm rejeitado** (Preview-2/Mono ~3,34 MB vs core-module/Preview-1;
+  `NativeAOT-LLVM` é o fix mas bloqueado no WSL → fase própria).
 - Render de display-list de pixels no iOS (Core Graphics) — o spike que motivou o pivot pro
   SDUI. Preservado pra referência, **superseded** pelo SDUI.
 
 **Em design (esta consolidação + branches irmãs):**
-- **Descritor SDUI → UIKit nativo** (ADR 0001): schema commitado; view-builder iOS rascunhado
-  em `feat/sdui-descriptor`; o tap-through no device é a prova do Kanban, sign-off final
-  pendente.
-- **ABI de capabilities** (ADR 0002), **HMR + estado** (ADR 0003), **Desktop** (ADR 0004),
-  **Super-app** (ADR 0005), **OTA** (ADR 0006), **Autoria poliglota** (ADR 0007).
+- view-builder iOS rascunhado em `feat/sdui-descriptor`; hosts Android/desktop/web e o shell
+  super-app ainda não construídos.
+- **ABI de capabilities** (ADR 0002 — task #22), **HMR + estado** (ADR 0003), **Desktop**
+  (ADR 0004), **Super-app** (ADR 0005), **OTA** (ADR 0006), **Autoria poliglota** (ADR 0007).
 
 **Índice de ADRs:** [0001 SDUI](docs/adr/0001-sdui-descriptor.md) ·
 [0002 Capabilities](docs/adr/0002-capabilities-abi.md) ·

@@ -74,6 +74,15 @@ depois de garantir o estado.
 - **iOS release:** **wasm2c → C → arm64 nativo** (toolchain do xtool). AOT, sem
   hot-swap — release não tem dev-server. HMR é **exclusivamente um recurso de dev**.
 
+### HMR multi-alvo simultâneo (DX matadora)
+
+O `reload:<versão>` do dev-server é um **broadcast por WebSocket pra TODOS os hosts
+conectados ao mesmo tempo** — **browser (host web) + app no device + desktop** re-renderizam
+juntos na mesma edição. Com o estado externalizado no store (§4c), o estado sobrevive ao diff
+em cada alvo. Uma edição, ao vivo em todos — o loop Flutter-multi-device, mas via descritor
+compartilhado. Isso torna o **host web** um alvo de 1ª classe (mesmo descritor → DOM), além de
+preview: capabilities só-device (câmera/GPS) são **mockadas** no host web pro dev.
+
 ## 3. Camadas de estado — o que existe pra preservar
 
 Nem todo "estado" é igual. Separar ajuda a ser honesto sobre o que sobrevive:
