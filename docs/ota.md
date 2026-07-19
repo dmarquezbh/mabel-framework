@@ -75,7 +75,51 @@ instantâneo pro grosso das mudanças (descritor).**
 Resumo: **interno = OTA de tudo; público = descritor-OTA + webview + AOT-baked, e o
 OTA de lógica-WASM fica cinza (evitar depender dele na loja pública).**
 
-## 5. Segurança do OTA
+## 5. Store-safety: a linha DADO vs CÓDIGO (dois tiers)
+
+A regra da Apple é simples: **dado é livre, código baixado não**. Isso reduz os 3 níveis
+a **dois tiers de store-safety**:
+
+### Tier 1 — SDUI puro (store-safe **e** instantâneo)
+
+Host nativo + uma **biblioteca de componentes/ações BAKED** (no binário) + um **descritor
+server-driven (DADO)**. O servidor manda o descritor (JSON/binário) → o app renderiza
+controles nativos e interpreta **ações NOMEADAS que já conhece** (baked). **Zero código
+baixado → zero 2.5.2.** Telas/layout/conteúdo novos = **OTA instantâneo, ilimitado, sem
+review** (o modelo SDUI do Airbnb/Spotify). Ponto-chave: **pode nem precisar de WASM no
+device** — se o vocabulário baked de ações/componentes for rico o bastante, quase todo
+update é só descritor novo.
+
+### Tier 2 — lógica portátil / mini-app com comportamento (WASM)
+
+Quando a feature precisa de **comportamento genuinamente novo** além do vocabulário
+baked, aí sim entra WASM:
+- **AOT-baked (wasm2c→nativo):** revisado como binário nativo → **100% store-clean**,
+  mas **sem OTA** (vai por release).
+- **Interpretado (WasmKit):** **OTA** — livre interno, cinza público.
+
+### Estratégia
+
+**Investir num vocabulário rico de ações/componentes baked** → a maioria dos updates vira
+**só descritor (dado)** = instantâneo e store-clean **pra sempre**. WASM-live fica
+reservado ao comportamento novo. Ou seja: empurra o máximo de mudança pro Tier 1.
+
+## 6. Modelo offline
+
+- **WASM = o motor do offline.** Com WASM local, a lógica roda no device: gera o descritor
+  a partir do estado local, trata evento e computa **offline**. Sem WASM (só
+  server-driven), offline = apenas **cache read-only** (descritor + dados cacheados +
+  ações baked nativas); lógica custom offline **não tem onde rodar**.
+- **Híbrido (recomendado):** online = SDUI do servidor (fresco/instantâneo/OTA); cacheia
+  descritor + dados **+ o módulo WASM**; offline = roda o WASM cacheado → app funcional de
+  verdade; sincroniza ao voltar.
+- **Simplificação:** **WASM AOT-baked = offline POR CONSTRUÇÃO** (está no binário, nem
+  cacheia) + descritores do servidor pra frescor online por cima = melhor dos dois.
+- **Regra:** app fino (só exibe dado do servidor) → dá pra dispensar WASM (cache + nativo,
+  offline read-only). App offline-de-verdade (interativo/computa) → **mantém WASM** como
+  motor local (baked recomendado).
+
+## 7. Segurança do OTA
 
 - **Descritor (nível 1)** não é código executável — o host só instancia controles
   nativos a partir dele; o pior caso é UI malformada, não execução arbitrária. Ainda
@@ -85,10 +129,11 @@ OTA de lógica-WASM fica cinza (evitar depender dele na loja pública).**
   (ver ADR 0005 §pendências). O sandbox WASM + manifesto limitam o dano, mas não
   substituem verificação de origem.
 
-## 6. Escopo / não-metas
+## 8. Escopo / não-metas
 
-- **É:** o modelo OTA em 3 níveis; a tensão AOT vs interpretador ancorada no spike; a
-  matriz interno-vs-público com a leitura honesta da 2.5.2.
+- **É:** o modelo OTA em 3 níveis; os 2 tiers de store-safety; o modelo offline; a tensão
+  AOT vs interpretador ancorada no spike; a matriz interno-vs-público com a leitura honesta
+  da 2.5.2.
 - **Não é (ainda):** implementação do canal de update; formato/assinatura do registry
   (ADR 0005); rollout gradual/rollback; wasm2c-AOT (aspiracional, não provado — só o
   interpretador WasmKit está provado no device).

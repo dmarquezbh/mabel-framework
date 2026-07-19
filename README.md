@@ -183,6 +183,42 @@ AOT-baked mini-apps.
 
 ---
 
+## Store-safety: the DATA vs CODE line (two tiers)
+
+Apple's line is simple — **data is free, downloaded code is not.** That collapses the
+levels above into two tiers of store-safety:
+
+- **Tier 1 — pure SDUI (store-safe *and* instant):** native host + a **baked
+  component/action library** + a **server-driven descriptor (DATA)**. The server sends the
+  descriptor; the app renders native controls and runs **named actions it already knows**
+  (baked). Zero downloaded code → zero 2.5.2. New screens/layout/content = **instant OTA,
+  unlimited, no review** (the Airbnb/Spotify SDUI model). It may need **no WASM on device
+  at all**.
+- **Tier 2 — portable logic / behavior (WASM):** only for genuinely new behavior beyond the
+  baked vocabulary. **AOT-baked (wasm2c→native) = 100% store-clean** (reviewed as a native
+  binary), no OTA; or **interpreted (WasmKit) = OTA**, gray in public / fine internally.
+
+**Strategy:** invest in a rich baked action/component vocabulary so most updates are just a
+new descriptor (data) — instant and store-clean forever; reserve WASM-live for new behavior.
+See **[docs/ota.md §5](docs/ota.md)**.
+
+## Offline model
+
+- **WASM is the offline engine.** With local WASM, logic runs on device: it produces the
+  descriptor from local state, handles events, and computes **offline**. Without WASM
+  (server-driven only), offline is **read-only cache** (cached descriptor + data + baked
+  native actions) — custom offline logic has nowhere to run.
+- **Hybrid (recommended):** online = server SDUI (fresh/instant/OTA); cache the descriptor +
+  data **+ the WASM module**; offline = run the cached WASM → a genuinely functional app;
+  sync on reconnect.
+- **Simplest:** **AOT-baked WASM = offline by construction** (it's in the binary) + server
+  descriptors for online freshness on top = best of both.
+- **Rule:** thin app (just shows server data) → you can skip WASM (cache + native, read-only
+  offline). Truly offline/interactive app → keep WASM as the local engine (baked
+  recommended). See **[docs/ota.md §6](docs/ota.md)**.
+
+---
+
 ## Polyglot authoring
 
 **The contract is the SDUI descriptor + WIT — not Blazor.** Blazor is just C#'s idiomatic
@@ -270,23 +306,25 @@ is **no single cross-desktop toolkit of native OS controls**, so the choice is e
 ## Status — honest, per platform
 
 Legend: **PROVEN** (runs, validated) · **DESIGNED** (spec/ADR, not built) · **TODO** (not
-started) · **BLOCKED** (external blocker).
+started) · **TO CONFIRM** (plausible, needs a spike) · **BLOCKED** (external blocker).
 
 The **SDUI descriptor contract** and the **capabilities WIT** are platform-neutral and
 shared: contract **DESIGNED (v1 committed)**. Per-platform pieces:
 
 | Layer | iOS | Android | Windows | Linux | macOS | Web |
 |---|---|---|---|---|---|---|
-| Host renders descriptor → native controls | **PROVEN**¹ | DESIGNED | DESIGNED | DESIGNED | BLOCKED² | TODO |
-| WASM runtime (live guest on device) | **PROVEN** (WasmKit, lean-lang)³ | DESIGNED (JIT) | DESIGNED (wasmtime) | DESIGNED (wasmtime) | BLOCKED² | TODO |
-| Capabilities (WIT ABI) | DESIGNED | DESIGNED | DESIGNED | DESIGNED | BLOCKED² | TODO |
-| Build without a Mac | **PROVEN** (xtool) | N/A | N/A | N/A | BLOCKED² | N/A |
-| HMR (hot reload) | DESIGNED (WasmKit swap) | DESIGNED | DESIGNED (primary loop) | DESIGNED (primary loop) | BLOCKED² | TODO |
-| Super-app shell (multi mini-app) | DESIGNED | DESIGNED | DESIGNED | DESIGNED | BLOCKED² | TODO |
+| Host renders descriptor → native controls | **PROVEN**¹ | DESIGNED | DESIGNED | DESIGNED | TO CONFIRM² | TODO |
+| WASM runtime (live guest on device) | **PROVEN** (WasmKit, lean-lang)³ | DESIGNED (JIT) | DESIGNED (wasmtime) | DESIGNED (wasmtime) | TO CONFIRM² | TODO |
+| Capabilities (WIT ABI) | DESIGNED | DESIGNED | DESIGNED | DESIGNED | TO CONFIRM² | TODO |
+| Build without a Mac | **PROVEN** (xtool) | N/A | N/A | N/A | TO CONFIRM² | N/A |
+| HMR (hot reload) | DESIGNED (WasmKit swap) | DESIGNED | DESIGNED (primary loop) | DESIGNED (primary loop) | TO CONFIRM² | TODO |
+| Super-app shell (multi mini-app) | DESIGNED | DESIGNED | DESIGNED | DESIGNED | TO CONFIRM² | TODO |
 
-¹ descriptor → UIKit with native scroll + tap validated on device (the Kanban proof); final
-on-device sign-off gates the consolidated PR.
-² blocked by the no-Mac principle (needs an Apple toolchain).
+¹ descriptor → UIKit with native **card-flash + scroll validated on device** (the Kanban
+proof, confirmed by Daniel).
+² **macOS-desktop = to confirm, not blocked:** no-Mac build is plausible via cross-compile
+Swift/AppKit + `apple-codesign`/`rcodesign` + notarization API, but it is not a paved xtool
+path yet → needs a spike (task #21).
 ³ **lean core-wasm only** (Rust/TinyGo/AssemblyScript/C). **.NET-wasm is not supported on
 WasmKit** — .NET is for authoring, build-time descriptor generation, and desktop/Android.
 
@@ -294,26 +332,64 @@ WasmKit** — .NET is for authoring, build-time descriptor generation, and deskt
 
 ## How Mabel compares
 
-| Framework | UI rendering | App language | iOS build without a Mac? | Super-app / OTA |
-|---|---|---|---|---|
-| **Mabel** | **Native OS controls** (SDUI) | **Any → WASM** (polyglot) | **Yes (xtool)** | **Yes (WASM mini-apps)** |
-| Flutter | Own engine (Skia canvas) | Dart | No | via add-to-app, no sandbox model |
-| React Native | Native controls | JavaScript | No | CodePush (JS OTA) |
-| .NET MAUI | Native controls | C# only | No | No |
-| Uno Platform | WinUI XAML everywhere | C# only | No | No |
-| Compose Multiplatform | Own (Skia), native on Android | Kotlin only | No | No |
-| Kotlin Multiplatform | Per-platform native (UI not shared) | Kotlin only | No | No |
-| Tauri | WebView (HTML/CSS/JS) | Rust + web front-end | No | web assets |
-| WeChat mini-programs | WebView | JavaScript only | (host app is native) | Yes (JS mini-programs) |
+The goal: take the best of each framework and mitigate what didn't work. Frameworks as
+columns, dimensions as rows. Tokens: ✅ good · ⚠️ partial/caveat · ❌ weak/absent.
+(Table scrolls horizontally.)
 
-Mabel's differentiator is the **intersection**: *one polyglot WASM module* → *real native
-OS controls* → *built without a Mac* → *as a sandboxed super-app mini-app*. No other row
-sits at all four points.
+| Dimension | Flutter | React Native | .NET MAUI | Compose MP | KMP | Uno | Tauri | Electron | Capacitor/Ionic | NativeScript | Qt | Avalonia | SwiftUI (native) | **Mabel** |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Language(s) | Dart | JS/TS | C# | Kotlin | Kotlin | C# | Rust+web | JS+web | JS+web | JS/TS | C++ | C# | Swift | **any→WASM** |
+| Render model | own canvas (Skia) | native controls | native controls | own (Skia)⁺ | per-platform native | WinUI XAML | webview | webview | webview | native controls | own (widgets) | own (Skia) | native controls | **native controls (SDUI)** |
+| Native feel / a11y | ⚠️ engine-drawn | ✅ | ✅ | ⚠️ | ✅ | ✅ | ❌ webview | ❌ webview | ❌ webview | ✅ | ⚠️ | ⚠️ own-render | ✅ | ✅ |
+| iOS build without a Mac | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | n/a (desktop) | ❌ | ❌ | ❌ | ❌ | ❌ | **✅ (xtool)** |
+| Targets | iOS/Android/web/desktop | iOS/Android(+desktop) | iOS/Android/desktop | iOS/Android/desktop/web | iOS/Android(+) | all | desktop(+mobile beta) | desktop | iOS/Android/web | iOS/Android | all | desktop(+mobile) | Apple only | **iOS/Android/Win/Linux** |
+| App size | ⚠️ large (engine) | ⚠️ medium (JS) | ⚠️ medium | ⚠️ large | ✅ (logic only) | ⚠️ | ✅ tiny | ❌ huge | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ✅ | **✅ tiny (lean guest)** |
+| Startup / perf | ✅ | ⚠️ (bridge) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ⚠️ | ⚠️ | ✅ | ✅ | ✅ | ✅ AOT / ⚠️ interp |
+| HMR / hot reload | ✅ | ✅ | ⚠️ | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ | ✅ | ✅ | ⚠️ | ✅ | ✅ (previews) | ✅ (desktop primary) |
+| OTA without store | ❌ | ✅ CodePush (JS) | ❌ | ❌ | ❌ | ❌ | ⚠️ web assets | ✅ | ✅ web | ⚠️ | ❌ | ❌ | ❌ | ✅ descriptor / ⚠️ WASM |
+| Polyglot | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ (web) | ⚠️ (web) | ⚠️ (web) | ❌ | ❌ | ❌ | ❌ | **✅ (any→WASM)** |
+| Sandbox / security | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ❌ | ⚠️ | ❌ | ❌ | ❌ | ❌ | **✅ (WASM per mini-app)** |
+| Super-app / mini-apps | ❌ | ⚠️ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **✅** |
+| Offline | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ (WASM local) |
+| DX / learning curve | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ | ✅ | ✅ | ⚠️ | ✅ | ✅ | ⚠️ early |
+| Maturity / ecosystem | ✅ | ✅ | ✅ | ⚠️ | ✅ | ⚠️ | ✅ | ✅ | ✅ | ⚠️ | ✅ | ⚠️ | ✅ | ❌ **new** |
+| Store policy fit | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (AOT/descriptor) / ⚠️ WASM-OTA public |
 
-Trade-off, stated honestly: SDUI's expressive power is bounded by its node set. Bespoke
-visuals (custom-drawn charts, game-like UI) would need a schema extension or a `Canvas`
-escape node — out of scope for v1. Mabel targets control-based app UI (forms, lists,
-boards, dashboards).
+⁺ Compose renders its own surface everywhere except Android, where it is native.
+
+### What Mabel takes from each — and what it mitigates
+
+- **Flutter** — takes: hot reload, single codebase, rich widgets. Mitigates: own-canvas
+  (weaker a11y/feel), Dart-only, large engine, iOS needs a Mac.
+- **React Native** — takes: native controls, OTA (CodePush), the Fabric/JSI direction.
+  Mitigates: old-bridge jank, JS-only, iOS needs a Mac.
+- **.NET MAUI / Uno** — takes: declarative C#, native controls. Mitigates: iOS needs a Mac,
+  C#-only.
+- **Compose Multiplatform** — takes: modern declarative UI. Mitigates: own-canvas off
+  Android, Kotlin-only, iOS needs a Mac.
+- **Kotlin Multiplatform** — takes: shared native logic, small size. Mitigates: UI not
+  shared (per-platform), Kotlin-only, iOS needs a Mac.
+- **Tauri** — takes: tiny size, web reuse, Rust core. Mitigates: webview (not native),
+  webview quirks.
+- **Electron / Capacitor / Ionic / NativeScript** — takes: web reuse, fast onboarding.
+  Mitigates: heavy webview / non-native feel (NativeScript is native but mobile-only).
+- **Qt / Avalonia** — takes: cross-platform desktop, mature (Qt). Mitigates: own-render
+  (not OS controls), C++ (Qt), iOS/Mac gaps.
+- **SwiftUI (native)** — takes: the gold standard for native feel/a11y (the bar Mabel
+  renders to). Mitigates: Apple-only, Swift-only, needs a Mac.
+
+**Synthesis (Mabel):** native controls (like RN/native, not a canvas) + **no Mac (unique)**
++ **polyglot WASM (no one else)** + super-app/mini-apps + OTA + tiny (lean guest) + offline
+(local WASM). It takes the best and avoids the dominant pains.
+
+**Where Mabel loses today (honest):** **maturity/ecosystem** (brand new — no plugin
+ecosystem, few samples), **DX** (tooling still thin), and the **roadmap tail** below
+(theming, i18n, animations, component breadth, devtools). The hard/differentiated parts are
+done or designed; the tail is known work.
+
+Trade-off on expressiveness: SDUI's power is bounded by its node set. Bespoke visuals
+(custom-drawn charts, game-like UI) would need a schema extension or a `Canvas` escape node
+— out of scope for v1. Mabel targets control-based app UI (forms, lists, boards, dashboards).
 
 ---
 
@@ -346,6 +422,34 @@ boards, dashboards).
 > Note: ADRs 0001/0002 live on their own feature branches (`feat/sdui-descriptor`,
 > `feat/mabel-capabilities-abi`); 0003–0007 and this README are on
 > `feat/mabel-arch-consolidation`. Links resolve once the branches are integrated.
+
+---
+
+## Roadmap — what's left to be a mature framework
+
+Honest tail. The differentiated/hard parts (no-Mac, WASM-as-DLL, super-app, store-safe OTA,
+polyglot, SDUI→native) are **done or designed**; the rest is known framework work, grouped
+by when it must be tackled.
+
+**🔴 Design early (architectural — hard to retrofit):**
+- **Schema versioning + host↔descriptor compatibility** (critical for OTA: an old host must
+  render a newer descriptor with graceful degradation).
+- **Navigation / routing** (stack, tabs, back, deep links).
+- **Accessibility *in the descriptor*** (label/role/hint in the schema — otherwise the
+  "free native a11y" never materializes).
+- **Responsive / adaptive layout** (sizes, rotation, desktop resize, safe-area, density/DPI).
+- **Lists / virtualization** (lazy, recycling, data windowing).
+
+**🟡 Maturity:** theming / design-system (light/dark, tokens, Material/Cupertino); i18n / RTL
+(⚠️ tension with `InvariantGlobalization`, which keeps the guest small); animations / gestures
+(swipe/drag/transitions); forms / input / validation / focus; component catalog (beyond the
+13 types: sheets, dialogs, date-picker); media (image/video/audio); lifecycle / background.
+
+**🟢 Ecosystem / DX:** devtools / inspector + profiler; testing (unit / widget / e2e over
+descriptor + hosts); error boundaries / crash-reporting / observability (New Relic);
+CI / per-platform distribution.
+
+This tail is tracked as task #20 (implement in waves: 🔴 → 🟡 → 🟢).
 
 ---
 

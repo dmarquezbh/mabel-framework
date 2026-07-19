@@ -11,9 +11,13 @@ em **controles nativos**. Trocar iOS/Android por Windows/Linux muda só o host �
 guest, o descritor SDUI e o contrato WIT de capabilities são **os mesmos**. Desktop
 não é um port; é mais um host da mesma arquitetura.
 
-Alvos desktop: **Windows e Linux**. **macOS-desktop fica adiado** — pela mesma trave
-do mobile (sem Mac; ver ADR 0001). Quando houver acesso a Mac, macOS entra como mais
-um host, sem mudar o modelo.
+Alvos desktop: **Windows e Linux**. **macOS-desktop fica "A CONFIRMAR"** (não
+"bloqueado"): o xtool já prova build/assinatura iOS sem Mac, e macOS-desktop sem Mac é
+**plausível** pela mesma família de técnicas — cross-compile Swift/AppKit + assinatura via
+`apple-codesign`/`rcodesign` no Linux + notarização via `notarytool`/API. Mas **não é um
+caminho pavimentado do xtool hoje** → precisa de um spike próprio antes de afirmar. Não
+tratar como resolvido. Windows/Linux vêm primeiro; macOS entra depois como mais um host,
+sem mudar o modelo.
 
 ## 2. Por que desktop importa (três motivos)
 
