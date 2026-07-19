@@ -165,15 +165,22 @@ O estado literalmente não se move — fica tudo na memória do runtime mono-was
 - **Prós:** o inner loop mais rápido possível e a melhor preservação de estado, sem
   arquitetura imposta ao dev.
 - **Contras / limites reais:**
-  - **Só no runtime interpretado/mono-wasm.** No caminho **release AOT (wasm2c)** o
-    Hot Reload **não existe** (AOT não aceita deltas de IL) — mas release não faz HMR
+  - **NÃO se aplica no iOS.** O spike WASM-on-device provou que **.NET→wasm não roda no
+    WasmKit** (o .NET emite WASI-preview2 Component + Mono; o WasmKit é core-module +
+    preview1 → rejeita). Sem mono-wasm rodando no iOS, **não há onde aplicar o delta** →
+    o iOS usa sempre swap + (c)/(b). O (d) vale onde um runtime que roda .NET-wasm
+    existe: **desktop (wasmtime, JIT)** e provavelmente **Android (JIT)**.
+  - **Só no runtime que roda .NET-wasm** (mono/interpretado). No caminho **release AOT**
+    o Hot Reload **não existe** (AOT não aceita deltas de IL) — mas release não faz HMR
     de qualquer forma, então ok.
   - Só cobre **edições não-"rude"** (corpo de método). Edições "rude" (novo campo,
     mudar assinatura, mudar hierarquia de tipos) **não** aplicam por delta → precisa
     cair pro swap de módulo (c/a).
-  - **Só vale pro guest .NET.** Guest Go/Rust não tem Roslyn — usa (c)/(b)/(a).
-- **Papel:** **otimização do caminho .NET** — quando a edição é aplicável, evita o
-  swap inteiro. Fora disso, degrada graciosamente pro swap com estado externalizado.
+  - **Só vale pro guest .NET.** Guest lean (Rust/TinyGo/AssemblyScript/C) — que é o
+    guest live-on-iOS — não tem Roslyn → usa (c)/(b)/(a).
+- **Papel:** **otimização do caminho .NET no desktop/Android** — quando a edição é
+  aplicável, evita o swap inteiro. No iOS e pros guests lean, degrada pro swap com
+  estado externalizado.
 
 ## 5. Recomendação
 
@@ -186,9 +193,10 @@ de edição e o runtime disponível:
    ser estruturado como `view(state)` + `update(state, action)`.
 2. **Transporte: (b) snapshot** (`serialize_state`/`restore_state`) é como o blob de
    estado atravessa um swap quando o guest é o dono da (de)serialização.
-3. **Otimização .NET: (d) Roslyn Hot Reload** para edições de corpo de método no guest
-   .NET — evita o swap por completo, preserva 100%. Detecção de "rude edit" cai pro
-   swap.
+3. **Otimização .NET (desktop/Android): (d) Roslyn Hot Reload** para edições de corpo
+   de método no guest .NET — evita o swap por completo, preserva 100%. Detecção de "rude
+   edit" cai pro swap. **Não no iOS** (WasmKit não roda .NET-wasm — o iOS sempre usa
+   swap+(c)/(b)).
 4. **Fallback: (a) reload total** quando o shape do estado mudou incompatível, quando
    a desserialização falha, ou quando o dev pede reset explícito.
 
@@ -240,17 +248,18 @@ guardando o blob de `serialize_state` entre swaps.
   opções de estado; recomendação em camadas (c padrão + b transporte + d otimização
   .NET + a fallback); mapa honesto do que sobrevive.
 - **Não é (ainda):** implementação do hot-swap no host Swift/WasmKit nem no host
-  desktop; integração real do Roslyn metadata-update no mono-wasm sob WasmKit
-  (a confirmar no spike); diffing incremental de descritor SDUI (hoje re-render
-  completo); migração automática de shape de estado (hoje é best-effort + fallback);
-  HMR em release (não existe por design).
+  desktop; integração real do Roslyn metadata-update no runtime .NET-wasm do desktop;
+  diffing incremental de descritor SDUI (hoje re-render completo); migração automática
+  de shape de estado (hoje é best-effort + fallback); HMR em release (não existe por
+  design).
 
 ## 8. Pontos que precisam de decisão / validação
 
-1. **Roslyn Hot Reload sob WasmKit (iOS) e wasmtime (desktop)** — o metadata-update
-   do mono-wasm aplica-se rodando dentro do WasmKit interpretado? **A validar no
-   spike WASM-on-device.** Se não aplicar no iOS, (d) fica só pro desktop e o iOS
-   usa sempre swap+(c)/(b).
+1. **Roslyn Hot Reload — resolvido pro iOS, aberto pro desktop.** O spike WASM-on-device
+   já mostrou que **.NET-wasm não roda no WasmKit** → (d) **não** existe no iOS (o iOS
+   usa sempre swap+(c)/(b); o guest live-on-iOS é lean-lang, sem Roslyn de qualquer
+   forma). **Falta validar** o metadata-update rodando no runtime .NET-wasm do
+   **desktop (wasmtime)** e do **Android (JIT)**, onde (d) é aplicável.
 2. **Formato do blob de estado** — JSON (simples, igual SDUI v1) vs binário
    (MessagePack, menor/rápido). Recomendo JSON pra v1; trocar depois não muda o modelo.
 3. **Modelo de programação obrigatório?** — Adotar (c) como padrão sugere um
