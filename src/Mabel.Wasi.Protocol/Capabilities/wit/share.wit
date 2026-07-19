@@ -1,0 +1,36 @@
+// =============================================================================
+// share — share sheet nativo.
+//
+// iOS: UIActivityViewController. Sem entitlement, sem usage-string → funciona
+// na conta FREE. O SO cuida do picker de destinos (Mensagens, Mail, AirDrop…);
+// o guest só entrega o conteúdo.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface share {
+    use types.{request-id, cap-status};
+
+    /// Item a compartilhar. Um share pode ter vários itens.
+    variant share-item {
+        /// Texto puro.
+        text(string),
+        /// URL (string; o host valida).
+        url(string),
+        /// Um asset já existente no host (ex.: foto capturada) por handle.
+        asset(string),
+        /// Bytes inline com mime (para payloads pequenos gerados pelo guest).
+        blob(blob-item),
+    }
+
+    record blob-item {
+        mime: string,
+        bytes: list<u8>,
+        /// Nome de arquivo sugerido (ex.: "relatorio.pdf").
+        filename: option<string>,
+    }
+
+    /// Abre o share sheet. Resolve em `on-capability-result` com `payload` =
+    /// 1 byte (1 = o usuário concluiu numa atividade, 0 = cancelou/dismiss).
+    present: func(request-id: request-id, items: list<share-item>) -> cap-status;
+}

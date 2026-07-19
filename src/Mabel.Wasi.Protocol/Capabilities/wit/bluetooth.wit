@@ -1,0 +1,126 @@
+// =============================================================================
+// bluetooth — Bluetooth Low Energy (BLE), papel CENTRAL (GATT client).
+//
+// É a capability que EXPÔS a lacuna de streaming da ABI (ADR 0003): scan e
+// notificações de característica são fluxos CONTÍNUOS, não one-shot. Por isso o
+// bluetooth usa OS DOIS padrões:
+//   • ONE-SHOT  (request-id + on-capability-result): connect, discover,
+//                read-characteristic, write-characteristic.
+//   • STREAM    (subscription-id + on-capability-event): start-scan,
+//                subscribe-characteristic (notify/indicate), subscribe-connection.
+//
+// Escopo v2 = BLE CENTRAL. Papel PERIPHERAL (advertising/GATT server) e
+// Bluetooth CLASSIC (não-BLE) ficam fora (ver §6 da doc / mapa iOS §5).
+//
+// Mapa por plataforma em docs/capabilities-abi.md §5.3 (iOS/Android/Desktop).
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface bluetooth {
+    use types.{request-id, subscription-id, cap-status};
+
+    /// Estado do rádio Bluetooth do device (síncrono; não dispara prompt).
+    enum adapter-state {
+        unknown,
+        unsupported,
+        /// Sem permissão concedida (ver permissions.request(bluetooth)).
+        unauthorized,
+        powered-off,
+        powered-on,
+    }
+
+    /// UUID de serviço/característica (string canônica 128-bit ou short 16-bit).
+    type uuid = string;
+
+    /// Handle opaco de um peripheral descoberto. Estável durante a sessão;
+    /// o host mapeia pro CBPeripheral / BluetoothDevice / etc.
+    type peripheral-id = string;
+
+    /// Filtro de scan. Vazio = descobre tudo (mais caro em bateria).
+    record scan-filter {
+        /// Só reporta peripherals que anunciam algum destes serviços.
+        service-uuids: list<uuid>,
+        /// Se true, reporta o MESMO device em cada advertising packet (RSSI vivo);
+        /// se false, uma vez por device.
+        allow-duplicates: bool,
+    }
+
+    /// Payload do evento device-found (event-kind = 0).
+    record advertisement {
+        peripheral: peripheral-id,
+        /// Nome anunciado (pode faltar).
+        name: option<string>,
+        /// Potência do sinal em dBm (negativo; mais perto de 0 = mais forte).
+        rssi: s32,
+        service-uuids: list<uuid>,
+        /// Manufacturer data crua (company id + bytes), se anunciada.
+        manufacturer-data: option<list<u8>>,
+    }
+
+    /// Propriedades GATT de uma característica (flags OR-áveis).
+    flags char-properties {
+        readable,
+        writable,
+        write-without-response,
+        notify,
+        indicate,
+    }
+
+    record characteristic {
+        uuid: uuid,
+        properties: char-properties,
+    }
+
+    record service {
+        uuid: uuid,
+        characteristics: list<characteristic>,
+    }
+
+    /// GATT descoberto (payload do resultado de `discover`).
+    record gatt {
+        peripheral: peripheral-id,
+        services: list<service>,
+    }
+
+    // ── Estado ──────────────────────────────────────────────────────────────────
+    /// Estado atual do rádio (síncrono).
+    state: func() -> adapter-state;
+
+    // ── STREAM: scan ─────────────────────────────────────────────────────────────
+    /// Começa a escanear. Cada peripheral encontrado chega em
+    /// `on-capability-event` (event-kind=0, payload=advertisement). Pare com
+    /// `streaming.unsubscribe(sub-id)`.
+    start-scan: func(subscription: subscription-id, filter: scan-filter) -> cap-status;
+
+    // ── ONE-SHOT: conexão + GATT ──────────────────────────────────────────────────
+    /// Conecta a um peripheral. Resolve em `on-capability-result`.
+    connect: func(request-id: request-id, peripheral: peripheral-id) -> cap-status;
+
+    /// Desconecta (fire-and-forget). Eventos de queda involuntária vêm por
+    /// `subscribe-connection`.
+    disconnect: func(peripheral: peripheral-id);
+
+    /// Descobre serviços/características. Resolve com `payload` = gatt (JSON).
+    discover: func(request-id: request-id, peripheral: peripheral-id) -> cap-status;
+
+    /// Lê uma característica. Resolve com `payload` = bytes lidos.
+    read-characteristic: func(request-id: request-id, peripheral: peripheral-id, characteristic: uuid) -> cap-status;
+
+    /// Escreve numa característica. `with-response` = write-with-response (aguarda
+    /// ACK do GATT) vs write-without-response. Resolve em `on-capability-result`.
+    write-characteristic: func(request-id: request-id, peripheral: peripheral-id,
+        characteristic: uuid, value: list<u8>, with-response: bool) -> cap-status;
+
+    // ── STREAM: notificações + estado de conexão ──────────────────────────────────
+    /// Liga notify/indicate numa característica. Cada mudança chega em
+    /// `on-capability-event` (event-kind=1, payload = bytes novos). Pare com
+    /// `streaming.unsubscribe`.
+    subscribe-characteristic: func(subscription: subscription-id,
+        peripheral: peripheral-id, characteristic: uuid) -> cap-status;
+
+    /// Observa o estado de conexão de um peripheral. Eventos em
+    /// `on-capability-event` (event-kind=2, payload = 1 byte: 1=conectado,
+    /// 0=desconectado). Útil pra detectar queda fora do controle do app.
+    subscribe-connection: func(subscription: subscription-id, peripheral: peripheral-id) -> cap-status;
+}

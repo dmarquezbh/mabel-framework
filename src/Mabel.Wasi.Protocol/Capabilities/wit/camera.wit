@@ -1,0 +1,68 @@
+// =============================================================================
+// camera + photo-library — captura de foto/vídeo e seleção da galeria.
+//
+// iOS: AVFoundation (AVCaptureSession) para captura; PHPickerViewController /
+// UIImagePickerController para seleção. Ambos assíncronos e com UI própria do
+// SO — o guest NUNCA recebe o stream de câmera cru (sandbox), só o artefato
+// final entregue via callback.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface camera {
+    use types.{request-id, cap-status};
+
+    enum media-kind {
+        photo,
+        video,
+    }
+
+    enum camera-facing {
+        front,
+        back,
+    }
+
+    record capture-options {
+        kind: media-kind,
+        facing: camera-facing,
+        /// Qualidade 0..1 (JPEG/H.264). Host clampa ao suportado.
+        quality: f32,
+        /// Se true, permite o usuário editar/recortar antes de confirmar.
+        allow-edit: bool,
+    }
+
+    record picker-options {
+        kind: media-kind,
+        /// Máximo de itens que o usuário pode selecionar (1 = single).
+        max-items: u32,
+    }
+
+    /// Resultado entregue no callback (serializado no `payload`): metadados +
+    /// um handle de asset. O host NÃO despeja os bytes na memória do guest por
+    /// padrão — a mídia pode ter dezenas de MB. O guest lê sob demanda via
+    /// `read-asset` (streaming em chunks) ou passa o handle direto pra um nó
+    /// SDUI Image (`Src = "mabel-asset:<id>"`).
+    record captured-asset {
+        asset-id: string,
+        kind: media-kind,
+        width: u32,
+        height: u32,
+        byte-size: u64,
+        mime: string,
+    }
+
+    /// Abre a câmera nativa. Resolve em `on-capability-result`
+    /// (capability = camera) com `payload` = captured-asset (JSON).
+    capture: func(request-id: request-id, options: capture-options) -> cap-status;
+
+    /// Abre o picker da galeria (capability = photo-library no callback).
+    pick: func(request-id: request-id, options: picker-options) -> cap-status;
+
+    /// Lê um pedaço dos bytes de um asset já capturado/selecionado. Síncrono e
+    /// paginado (offset/len) para não estourar a memória linear do WASM.
+    /// Retorna os bytes lidos (vazio = fim). Só funciona com asset-id vivo.
+    read-asset: func(asset-id: string, offset: u64, len: u32) -> result<list<u8>, cap-status>;
+
+    /// Libera o asset (host descarta o arquivo temporário).
+    release-asset: func(asset-id: string);
+}
