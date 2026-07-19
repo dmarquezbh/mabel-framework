@@ -1,0 +1,27 @@
+// =============================================================================
+// streaming — o lado genérico do padrão subscription (ADR 0003).
+//
+// O *subscribe* mora em CADA capability (os params são específicos: filtro de
+// scan BLE, acurácia de GPS, UUID de característica…) e retorna `cap-status`,
+// recebendo um `subscription-id` gerado pelo guest. O que é GENÉRICO — e mora
+// aqui — é o cancelamento: `unsubscribe(sub-id)` derruba qualquer stream,
+// roteado pelo host (que mantém sub-id → capability + recurso nativo).
+//
+// Os eventos do stream chegam no export único `on-capability-event` (ver
+// world.wit), análogo ao `on-capability-result` do one-shot.
+//
+// Convive com o one-shot (request-id + on-capability-result): uma capability
+// pode expor OS DOIS (ex.: bluetooth tem connect one-shot E scan/notify stream).
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface streaming {
+    use types.{subscription-id};
+
+    /// Cancela uma assinatura ativa (idempotente). Após isto o host não emite
+    /// mais `on-capability-event` para este `sub-id` e libera o recurso nativo
+    /// (para o scan BLE, desliga a notificação da característica, encerra o
+    /// stream de GPS…). Fire-and-forget: sem callback de confirmação.
+    unsubscribe: func(subscription: subscription-id);
+}

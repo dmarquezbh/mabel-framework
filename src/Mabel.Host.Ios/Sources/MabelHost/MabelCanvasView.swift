@@ -38,7 +38,7 @@ enum RenderOp: UInt8 {
     case endFrame   = 0xF1
 }
 
-struct RenderCommand {
+public struct RenderCommand {
     let op: RenderOp
     let x: Float
     let y: Float

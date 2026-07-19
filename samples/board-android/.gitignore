@@ -1,0 +1,12 @@
+# Gradle / Android build artifacts — nunca versionar
+.gradle/
+build/
+**/build/
+*.apk
+*.aab
+
+# Machine-specific SDK path (cada dev aponta o seu; ou use ANDROID_HOME)
+local.properties
+
+# Gradle wrapper cache
+.gradletasknamecache

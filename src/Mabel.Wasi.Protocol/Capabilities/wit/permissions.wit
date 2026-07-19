@@ -1,0 +1,26 @@
+// =============================================================================
+// permissions — consulta e solicitação de autorização do SO.
+//
+// Duas camadas de gate no Mabel (ver ADR 0002 §"Segurança"):
+//   (1) MANIFESTO — o host só liga o import real das capabilities declaradas.
+//       Uma capability não declarada responde `not-authorized` sem tocar o SO.
+//   (2) SO/RUNTIME — mesmo declarada, a maioria exige consentimento do usuário
+//       (câmera, GPS, notificações, biometria). É esta interface que expõe isso.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface permissions {
+    use types.{request-id, capability-id, permission-state, cap-status};
+
+    /// Consulta SÍNCRONA do estado atual — não dispara prompt. Barato; o guest
+    /// chama antes de mostrar UI que dependa da capability.
+    check: func(capability: capability-id) -> permission-state;
+
+    /// Solicita autorização (assíncrono). Se `not-determined`, o SO mostra o
+    /// prompt nativo; senão resolve com o estado atual. O resultado chega em
+    /// `on-capability-result` com um `payload` de 1 byte = permission-state.
+    /// Retorno imediato = a chamada foi aceita (`ok`) ou recusada localmente
+    /// (`not-authorized` se não declarada no manifesto).
+    request: func(request-id: request-id, capability: capability-id) -> cap-status;
+}

@@ -1,0 +1,48 @@
+// =============================================================================
+// secure-storage — armazenamento seguro (Keychain).
+//
+// iOS: Security framework (SecItem*). Keychain BÁSICO por-app funciona na conta
+// FREE (não exige entitlement). ⚠️ Compartilhar entre apps
+// (keychain-access-groups) ou sincronizar via iCloud Keychain EXIGE entitlement
+// com App ID configurado no portal → BLOQUEADO na free. A ABI v2 expõe só o
+// keychain por-app (sem grupos, sem iCloud sync). Ver mapa iOS.
+//
+// Chave/valor simples. Valores são bytes opacos (o guest escolhe o formato).
+// Operações são SÍNCRONAS: o Keychain é rápido e local, não precisa de callback.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface secure-storage {
+    use types.{cap-status};
+
+    /// Quando o item fica acessível (mapeia kSecAttrAccessible*).
+    enum accessibility {
+        /// Só com o device desbloqueado (kSecAttrAccessibleWhenUnlocked).
+        when-unlocked,
+        /// Após o primeiro unlock desde o boot (…AfterFirstUnlock).
+        after-first-unlock,
+        /// Só neste device, exige passcode setado (…WhenPasscodeSetThisDeviceOnly).
+        when-passcode-set-this-device-only,
+    }
+
+    record put-options {
+        accessibility: accessibility,
+        /// Se true, o acesso ao item exige biometria/passcode a cada leitura
+        /// (SecAccessControl com .biometryCurrentSet / .userPresence).
+        require-user-presence: bool,
+    }
+
+    /// Grava (cria ou sobrescreve). `value` opaco.
+    put: func(key: string, value: list<u8>, options: put-options) -> cap-status;
+
+    /// Lê. `not-found` vem como status `unavailable`; se require-user-presence,
+    /// pode disparar prompt biométrico (síncrono do ponto de vista do guest).
+    get: func(key: string) -> result<list<u8>, cap-status>;
+
+    /// Remove a chave (idempotente).
+    delete: func(key: string) -> cap-status;
+
+    /// Lista as chaves gravadas por este app (não os valores).
+    keys: func() -> list<string>;
+}
