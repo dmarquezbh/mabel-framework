@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Mabel host desktop para Windows.
+    WPF (net10.0-windows) cross-publicado do Linux/WSL: EnableWindowsTargeting
+    baixa os targeting packs Windows Desktop no NuGet, entao "dotnet publish
+    -r win-x64" gera o .exe nativo sem toolchain especial (o proprio .NET
+    cross-compila). OutputType=Exe (nao WinExe) pra manter o console vivo e
+    ver os logs de tap e o selftest.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AssemblyName>Mabel.Host.Windows</AssemblyName>
+    <RootNamespace>Mabel.Host.Windows</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Consome o MESMO contrato tipado que o host iOS e o WASM guest. -->
+    <ProjectReference Include="..\Mabel.Wasi.Protocol\Mabel.Wasi.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Descritores SDUI (guest). Copiados pro output. kanban-sdui.json = Kanban v1;
+         kanban-onda2.json = descritor v2 (NavStack + List virtualizada 30 + tipo-200). -->
+    <Content Include="assets\kanban-sdui.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="assets\kanban-onda2.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>
