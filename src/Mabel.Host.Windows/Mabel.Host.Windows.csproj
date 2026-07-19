@@ -27,8 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Descritor SDUI emitido pelo board_gen (guest). Copiado pro output. -->
+    <!-- Descritores SDUI (guest). Copiados pro output. board-sdui.json = Board v1;
+         board-onda2.json = descritor v2 (NavStack + List virtualizada 30 + tipo-200). -->
     <Content Include="assets\board-sdui.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="assets\board-onda2.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
