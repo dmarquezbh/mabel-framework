@@ -1,0 +1,52 @@
+// =============================================================================
+// notifications — notificações LOCAIS.
+//
+// iOS: UserNotifications (UNUserNotificationCenter). Só notificação LOCAL
+// (agendada no device). PUSH/remota (APNs) exige entitlement aps-environment +
+// App ID com Push + provisioning — ⚠️ BLOQUEADO na conta Apple FREE
+// (dmarquesbh@gmail.com). Por isso a ABI v2 expõe SÓ local. Ver mapa iOS.
+// =============================================================================
+
+package mabel:capabilities@0.2.0;
+
+interface notifications {
+    use types.{request-id, subscription-id, cap-status};
+
+    /// Gatilho da notificação local.
+    variant trigger {
+        /// Dispara N segundos após o agendamento.
+        after-seconds(u32),
+        /// Dispara num instante absoluto (epoch ms).
+        at-time(u64),
+    }
+
+    record local-notification {
+        /// Id estável — permite atualizar/cancelar depois. Devolvido no tap.
+        id: string,
+        title: string,
+        body: string,
+        /// Nome do som do bundle, ou vazio p/ o som padrão do SO.
+        sound: option<string>,
+        /// Número no badge do ícone do app (iOS). None = não mexe.
+        badge: option<u32>,
+        trigger: trigger,
+    }
+
+    /// Agenda uma notificação local. Requer permissão concedida (ver
+    /// permissions.request(notifications)). Resolve em `on-capability-result`.
+    schedule: func(request-id: request-id, notification: local-notification) -> cap-status;
+
+    /// Cancela uma notificação agendada (ainda não disparada) pelo id.
+    cancel: func(id: string);
+
+    /// Cancela todas as pendentes deste app.
+    cancel-all: func();
+
+    /// STREAM (padrão subscription do ADR 0003): observa INTERAÇÕES com
+    /// notificações deste app — usuário tocou, ou uma chegou com o app aberto.
+    /// Eventos em `on-capability-event` (event-kind=0=tapped, 1=received-foreground;
+    /// payload = id da notificação, UTF-8). Pare com `streaming.unsubscribe`.
+    /// (iOS: UNUserNotificationCenterDelegate; Android: callback do
+    /// NotificationManager / intent do tap.)
+    subscribe-received: func(subscription: subscription-id) -> cap-status;
+}
