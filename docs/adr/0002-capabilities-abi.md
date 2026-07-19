@@ -7,9 +7,14 @@
 
 ## Contexto
 
-O app Mabel roda como **WASM sandbox** (.NET → wasm, executado por WasmKit dentro do
-shell Swift no device). Sandbox = zero acesso direto ao SO; o guest só fala com o host
-por **imports/exports** (o canal de render já é assim: `Protocol.cs` ↔ `WasiContract.cs`).
+O app Mabel roda como **WASM sandbox** (.NET → wasm, o **mesmo binário** nos dois alvos).
+Sandbox = zero acesso direto ao SO; o guest só fala com o host por **imports/exports**
+(o canal de render já é assim: `Protocol.cs` ↔ `WasiContract.cs`).
+
+**iOS e Android são alvos co-iguais** (requisito do Daniel). Há **dois hosts nativos
+independentes** — shell Swift (WasmKit) no iOS, shell Kotlin/Java no Android — consumindo
+**o mesmo WIT** e o mesmo manifesto. A ABI é platform-neutral por design; o que muda é só
+o host (API nativa + runtime WASM, ver D5).
 
 Para o app ser útil (não só desenhar), ele precisa de **APIs nativas**: câmera, GPS,
 notificações, biometria, secure-storage, share, clipboard, haptics. Três decisões de
@@ -24,13 +29,18 @@ Constraints herdadas (do stack já decidido):
 - **Guest = .NET → WASI Preview 1 core module** (workload `wasi-experimental`). O .NET
   ainda **não** emite componentes do Component Model de primeira classe; `componentize-dotnet`
   (NativeAOT-LLVM + wit-bindgen) existe mas é caminho separado e imaturo pra este uso.
-- **Host = WasmKit (Swift).** Runtime WASM em Swift puro; roda core module + WASI p1 bem,
+- **Host iOS = WasmKit (Swift).** Runtime WASM em Swift puro; roda core module + WASI p1 bem,
   mas suporte a **Component Model / WASI Preview 2 (futures, streams, `wasi:io/poll`)**
-  é experimental/incompleto.
-- **Build iOS sem Mac, via xtool** (mesma trave do ADR 0001). Nenhum passo pode depender
-  de Xcode/Mac.
+  é experimental/incompleto. **iOS proíbe JIT** (sem memória executável p/ apps de 3º) →
+  WasmKit roda como **interpretador**.
+- **Host Android = shell Kotlin/Java.** **Android permite JIT** → runtime WASM pode ser
+  bem mais rápido: **wasmtime via JNI** (Cranelift) ou **Chicory** (puro-Java, interpretado,
+  sem NDK). Projeto separado do iOS; mesma ABI.
+- **Build sem toolchain proprietária:** iOS sem Mac via **xtool** (trave do ADR 0001);
+  Android via SDK/Gradle + APK sideloaded. Ambos fora de loja no fluxo de dev.
 - **Conta Apple FREE** (`dmarquesbh@gmail.com`, Personal Team): sem Push, sem App Groups,
-  sem Associated Domains, sem iCloud/iCloud Keychain, perfis de 7 dias.
+  sem Associated Domains, sem iCloud/iCloud Keychain, perfis de 7 dias. **Android não tem
+  trava equivalente** (sideload livre; FCM grátis).
 
 ## Decisão
 
@@ -74,18 +84,33 @@ tabela `request-id → continuation` à mão (o bindgen faria isso sozinho no mu
    **declaradas**. Não declarada → stub que devolve `NotAuthorized`; o guest nunca alcança
    o SO. Least authority por construção.
 2. **Consentimento do SO (runtime):** câmera/GPS/notif/biometria ainda exigem o prompt
-   nativo do iOS. Exposto pela interface `permissions` (check síncrono + request async);
-   qualquer capability pode voltar `permission-denied`.
+   nativo do SO — **iOS e Android** (runtime permissions do Android 6+). Exposto pela
+   interface `permissions` (check síncrono + request async), platform-neutral; qualquer
+   capability pode voltar `permission-denied`.
 
-O manifesto é também a **fonte única das usage-strings** do Info.plist (o passo de build
-xtool injeta), evitando o crash clássico do iOS por permissão pedida sem usage-string.
+O manifesto é também a **fonte única** das entradas de build nas **duas plataformas**: do
+`CapabilityId`+`usageDescription`, cada host deriva a usage-string do `Info.plist` (iOS) ou
+o `<uses-permission>` do `AndroidManifest.xml` + rationale (Android). Evita o crash clássico
+do iOS por permissão sem usage-string e o `SecurityException` do Android por permissão não
+declarada.
 
-### D4 — Recorte pela conta free
+### D4 — Recorte de escopo: notifications=local, secure-storage=por-app
 
-Como a conta é FREE, a ABI v2 **expõe só o que passa sem App ID no portal**:
-`notifications` = **só local** (push cortado), `secure-storage` = **só por-app**
-(sem groups/iCloud). Câmera, galeria, GPS (when-in-use), biometria, share, clipboard e
-haptics passam com usage-string no Info.plist. Tabela completa em `docs/capabilities-abi.md §5`.
+A ABI v2 corta **push** e **keychain compartilhado/iCloud**. No **iOS** isso é
+*imposto* pela conta FREE (push exige `aps-environment`+App ID no portal; keychain-sharing
+idem). No **Android** não há trava (FCM é grátis, Block Store é livre) — então o corte lá é
+**escolha de paridade**, pra manter um contrato único nos dois alvos no v2. Reabrir push é
+somar uma capability + Firebase (Android) / conta paga (iOS), sem mudar o resto da ABI.
+Câmera, galeria, GPS (when-in-use), biometria, share, clipboard e haptics entram nos dois.
+Tabela completa (iOS + Android) em `docs/capabilities-abi.md §5`.
+
+### D5 — Um WIT, dois hosts; runtime é detalhe interno do host
+
+O contrato (WIT + manifesto + nomes de função core) é **idêntico** nos dois alvos. Cada host
+implementa a mesma ABI contra a API nativa da sua plataforma (§5) e escolhe seu runtime WASM
+**sem vazar isso pro guest**: iOS = WasmKit interpretado (JIT proibido); Android = wasmtime/JNI
+com JIT (ou Chicory). A implementação pode priorizar o iOS (onde o Board é a prova), mas o
+design já nasce válido pros dois — **zero retrabalho de ABI** pra ligar o Android depois.
 
 ## Consequências
 
@@ -97,8 +122,12 @@ haptics passam com usage-string no Info.plist. Tabela completa em `docs/capabili
   que o bindgen p2 eliminaria).
 - (−) Um único export de callback concentra o roteamento; precisa de disciplina pra não
   vazar continuations (timeout + limpeza).
-- (−) Recorte pela conta free deixa push e keychain-compartilhado fora do v2; uma conta
-  paga no futuro reabre essas trilhas (só somar entries no manifesto + entitlements).
+- (−) Recorte deixa push e keychain-compartilhado fora do v2; reabrir = somar capability +
+  Firebase/conta paga, sem mexer no resto da ABI.
+- (+) **iOS e Android co-iguais com um só contrato:** o mesmo WIT/manifesto/guest serve os
+  dois; só os hosts diferem. Ligar o Android depois não custa retrabalho de ABI.
+- (−) Manter dois hosts nativos dobra a superfície de implementação (Swift + Kotlin/Java) e
+  exige um mapa `CapabilityId → permissão nativa` por plataforma (documentado em §5).
 
 ## Decisões que precisam do Daniel (ou do spike) antes de implementar
 
@@ -112,4 +141,9 @@ haptics passam com usage-string no Info.plist. Tabela completa em `docs/capabili
    `xtool.yml` do repo (o hello-world já gera Info.plist). É o que valida D4 na prática.
 4. **`camera` vs `photo-library` como capabilities separadas** — hoje são ids distintos
    (usage-strings distintas no iOS). Mantido separado; confirmar se o app quer as duas.
+5. **Runtime WASM no Android** — wasmtime via JNI (Cranelift, rápido, exige NDK) vs. Chicory
+   (puro-Java, sem NDK, interpretado). Recomendo começar com o que buildar mais fácil no
+   spike; não afeta o contrato. Confirmar no spike.
+6. **Localização no Android** — `FusedLocationProviderClient` (Play Services) vs.
+   `LocationManager` da AOSP (sem Google). Confirmar se aceitamos a dependência do Google.
 ```

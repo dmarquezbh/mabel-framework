@@ -17,6 +17,13 @@ biometria, keychain, share, clipboard, haptics. Modelo = **capability-based, est
 WASI / Component Model**: o guest só recebe a autoridade que o app **declara** num
 manifesto; o host media tudo.
 
+**iOS e Android são alvos CO-IGUAIS.** O contrato — WIT + descritor + manifesto — é
+**platform-neutral por design**: um único WIT, consumido por dois hosts nativos independentes
+(shell Swift no iOS, shell Kotlin/Java no Android). O guest .NET→WASM é o mesmo binário nos
+dois. O que muda é só o host: cada um mapeia as MESMAS capabilities pras APIs nativas da sua
+plataforma (§5) e roda o WASM no runtime que a plataforma permite (§3.1). A segurança
+capability-based (declara→liga) vale igual nos dois.
+
 Arquivos deste design:
 
 ```
@@ -106,6 +113,26 @@ no WasmKit no host — nenhum dos dois está sólido neste stack hoje. O WIT aqu
 `Protocol.cs`↔`WasiContract.cs`. Migrar pra futures p2 depois é trocar o lowering
 sem mudar o modelo semântico. **Ver ADR 0002 para a decisão completa.**
 
+> O diagrama acima mostra o host iOS (Swift/WasmKit); no Android o fluxo é **idêntico**
+> — só troca o runtime WASM e a API nativa (`ACTION_IMAGE_CAPTURE`/CameraX no lugar do
+> `AVCaptureSession`). Mesmos nomes de função core, mesmo callback.
+
+### 3.1 Runtime WASM por plataforma (iOS sem JIT, Android com JIT)
+
+Os dois hosts consomem o **mesmo WIT** e rodam o **mesmo guest**, mas o runtime WASM
+difere pela política de cada SO:
+
+| Plataforma | JIT? | Runtime WASM sugerido                                   | Nota |
+|------------|------|--------------------------------------------------------|------|
+| **iOS**    | ❌ proibido (sem memória executável gravável p/ apps de 3º) | **WasmKit** (interpretador, Swift puro) | Único caminho viável; sem AOT/JIT. Perf = interpretador. |
+| **Android**| ✅ permitido | **wasmtime via JNI** (Cranelift JIT/AOT) — o mais rápido; **Chicory** (puro-Java, interpretador) como fallback sem NDK | Pode usar JIT → guest roda bem mais rápido que no iOS. |
+
+Isso **não vaza pro contrato**: WIT, manifesto e os nomes de função core são idênticos.
+O host Android é um projeto separado (`Mabel.Host.Android`, Kotlin/Java) do host iOS, mas
+os dois implementam a mesma ABI. A escolha de runtime é interna ao host — o guest não sabe
+nem se importa. (No iOS, a perf de interpretador do WasmKit é o motivo extra pra manter
+payloads pequenos e mídia via `read-asset` em chunks, não despejada na memória linear.)
+
 ## 4. Segurança capability-based (duas camadas)
 
 ### Camada 1 — Manifesto (atenuação de autoridade, host-side)
@@ -131,23 +158,33 @@ capabilities **declaradas**. Capability não declarada → stub que responde
 - **Least authority (POLA):** lista vazia = app puramente SDUI, zero device access.
   O que não está no manifesto é negado **por construção**, não por checagem esquecível.
 - Estático, auditável, versionado com o app. É o que o host confia.
-- O manifesto é a **fonte única** também para o build (ver §5): a `usageDescription`
-  vira a usage-string do Info.plist.
+- O manifesto é a **fonte única** também para o build, nas **duas plataformas** (ver §5):
+  do `CapabilityId` + `usageDescription` o passo de build deriva as entradas nativas —
+  no **iOS** a usage-string do `Info.plist` (ex.: `NSCameraUsageDescription`); no
+  **Android** o `<uses-permission>` no `AndroidManifest.xml` (ex.: `android.permission.CAMERA`)
+  e a string de rationale do prompt runtime. O manifesto Mabel é neutro; o mapa
+  `CapabilityId → permissão nativa` é responsabilidade de cada host (§5).
 
 ### Camada 2 — SO / runtime (consentimento do usuário)
 
-Mesmo declarada, câmera/GPS/notificações/biometria exigem o **prompt nativo** do iOS
-("Permitir que o app use a câmera?"). Isso é intransponível pelo manifesto — é do SO.
-A interface `permissions` (check síncrono + request assíncrono) expõe isso ao guest,
-e todo resultado de capability pode voltar `permission-denied`.
+Mesmo declarada, câmera/GPS/notificações/biometria exigem o **prompt nativo do SO**
+("Permitir que o app use a câmera?") — vale igual no iOS e no Android (runtime permissions
+do Android 6+). Isso é intransponível pelo manifesto — é do SO. A interface `permissions`
+(check síncrono + request assíncrono) expõe isso ao guest de forma platform-neutral, e todo
+resultado de capability pode voltar `permission-denied`.
 
 Ordem recomendada no guest: `permissions.check` → se `not-determined`, `permissions.request`
 no momento certo (com contexto de UI) → só então a chamada da capability.
 
-## 5. Mapa iOS por capability
+## 5. Mapa por capability — iOS **e** Android
 
-Cada capability → API nativa iOS + o gate de build (entitlement/Info.plist) + se o
-**xtool consegue injetar** + se funciona na **conta Apple FREE** (`dmarquesbh@gmail.com`).
+Cada capability mapeia pra uma API nativa em **cada** plataforma, com o respectivo gate
+de permissão. O contrato (WIT/manifesto) é o mesmo; só o host traduz.
+
+### 5.1 iOS
+
+API nativa iOS + gate de build (entitlement/Info.plist) + se o **xtool consegue injetar**
++ se funciona na **conta Apple FREE** (`dmarquesbh@gmail.com`).
 
 > **⚠️ Conta FREE (Personal Team) — limites que importam aqui:**
 > perfis de 7 dias, **sem Push (APNs)**, **sem App Groups**, **sem Associated Domains**,
@@ -177,6 +214,41 @@ compartilhado/iCloud**, e por tabela também App Groups e Associated Domains (n�
 capabilities deste design, mas caem na mesma trave). Por isso `notifications.wit` expõe
 **só local** e `secure-storage.wit` **só por-app**.
 
+### 5.2 Android
+
+API nativa Android + a permissão declarada no `AndroidManifest.xml` (as marcadas
+*(runtime)* também exigem o prompt de runtime do Android 6+) + se precisa de algo extra
+(Play Services / Play Console).
+
+> **Notas de plataforma (Android):**
+> - Permissões `normal` (VIBRATE, USE_BIOMETRIC) são **auto-concedidas** no install; as
+>   `dangerous` (CAMERA, localização, POST_NOTIFICATIONS) exigem prompt **runtime**.
+> - **Play Console** só entra ao **publicar na Play Store** (formulário de Data Safety;
+>   declaração de background-location/foreground-service). No fluxo Mabel (sideload do
+>   APK, análogo ao xtool no iOS) **não é necessário** pra dev/teste.
+> - **Sem trava de "conta free"** como no iOS: sideload de APK assinado com debug/keystore
+>   próprio é livre. Inclusive **push (FCM) é grátis** no Android — a exclusão de push do
+>   v2 é uma escolha de **paridade com o iOS**, não um limite do Android (ver tabela).
+
+| Capability      | API nativa Android                                          | `AndroidManifest.xml` (permissão)                                       | Extra |
+|-----------------|-------------------------------------------------------------|-------------------------------------------------------------------------|-------|
+| **camera**      | CameraX (androidx.camera) / `MediaStore.ACTION_IMAGE_CAPTURE` | `android.permission.CAMERA` *(runtime)* + `<uses-feature android.hardware.camera>` | — |
+| **photo-library** | **Photo Picker** (`PickVisualMedia`, API 33+) / SAF `ACTION_OPEN_DOCUMENT` | Photo Picker/SAF = **sem permissão**; legado: `READ_MEDIA_IMAGES`/`READ_MEDIA_VIDEO` (33+) ou `READ_EXTERNAL_STORAGE` *(runtime)* | Prefira Photo Picker (permissionless) |
+| **location**    | `FusedLocationProviderClient` (Play Services) / `LocationManager` (AOSP) | `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` *(runtime)*            | Fused precisa Play Services; AOSP não. Background = `ACCESS_BACKGROUND_LOCATION` (fora do v2) |
+| **notifications (local)** | `NotificationManagerCompat` + `NotificationChannel` (API 26+) | `POST_NOTIFICATIONS` *(runtime, API 33+)*                           | — |
+| **notifications (push/remota)** | **FCM** (Firebase Cloud Messaging)               | `POST_NOTIFICATIONS` *(runtime)*                                        | Precisa projeto **Firebase** (grátis). ✅ **funciona no Android** (≠ iOS free) — cortado do v2 só por paridade |
+| **biometrics**  | `BiometricPrompt` (androidx.biometric)                      | `USE_BIOMETRIC` *(normal, auto)*                                        | — |
+| **secure-storage (por-app)** | Android Keystore + `EncryptedSharedPreferences` / DataStore | **Nenhuma permissão**                                          | Chaves lastreadas no Keystore (hardware-backed onde houver) |
+| **secure-storage (sync)** | Block Store / Backup                              | **Nenhuma permissão**                                                   | Sync entre devices = Block Store (fora do v2, igual iCloud) |
+| **share**       | `Intent.ACTION_SEND` / `ACTION_SEND_MULTIPLE` + `createChooser` | **Nenhuma permissão**                                              | — |
+| **clipboard**   | `ClipboardManager` (`CLIPBOARD_SERVICE`)                    | **Nenhuma permissão**                                                   | Leitura só com app em foreground (API 29+); toast de cópia (API 33+) |
+| **haptics**     | `VibratorManager` (API 31+) / `Vibrator` + `VibrationEffect`; `View.performHapticFeedback` | `android.permission.VIBRATE` *(normal, auto)*             | Só device físico |
+
+**Resumo Android v2:** as mesmas 9 capabilities do iOS mapeiam limpo. Nenhuma trava de conta;
+o único "extra" é Firebase pra push (fora do v2) e Play Services pra localização *fused*
+(dá pra cair no `LocationManager` da AOSP se quiser zero Google). Paridade com o iOS
+mantida: `notifications` = **local**, `secure-storage` = **por-app**.
+
 ### Pontos a confirmar no spike (não assumir)
 
 Marcados porque dependem do comportamento real do **xtool** e do runtime, que só o
@@ -192,13 +264,21 @@ spike WASM-on-device fecha:
    no device. Alinhado com o deploy Mabel (sempre device físico).
 4. **CoreHaptics vs. UIFeedbackGenerator** — os padrões comuns (impact/notification/
    selection) bastam para v2; CoreHaptics custom fica para depois.
+5. **Android — runtime WASM:** confirmar no spike se **wasmtime via JNI** (Cranelift)
+   builda/roda limpo no `Mabel.Host.Android` ou se começamos com **Chicory** (puro-Java,
+   sem NDK, mais simples porém interpretado). Não muda o contrato — decisão interna do host.
+6. **Android — localização:** `FusedLocationProviderClient` exige Play Services. Confirmar
+   se aceitamos a dependência do Google ou se caímos no `LocationManager` da AOSP (sem Google).
 
 ## 6. Escopo / não-metas (v2)
 
-- **É:** contrato WIT das 9 capabilities custom, lowering achatado core-module, modelo
-  de manifesto capability-based, padrão async reqId+callback, mapa iOS + conta free.
-- **Não é (ainda):** implementação do host Swift, bindgen .NET, push notifications,
-  keychain compartilhado/iCloud, background location, CoreHaptics custom, host Android
-  (a estrutura existe; o mapa Android — CameraX/FusedLocation/etc. — vem depois),
-  transporte binário / migração pra futures do Component Model (troca de lowering futura).
+- **É:** contrato WIT das 9 capabilities custom (platform-neutral), lowering achatado
+  core-module, manifesto capability-based, async reqId+callback, mapa **iOS + Android**
+  por capability, nota de runtime (iOS interpretador / Android JIT).
+- **Não é (ainda):** implementação dos hosts (Swift **e** Kotlin/Java), bindgen .NET, push
+  notifications (APNs/FCM), keychain compartilhado/iCloud/Block Store, background location,
+  CoreHaptics custom, transporte binário / migração pra futures do Component Model.
+- **Os dois hosts são co-iguais no design.** A implementação pode priorizar o iOS primeiro
+  (onde o Board é a prova), mas o contrato já nasce válido pros dois — nenhum retrabalho de
+  ABI pra ligar o Android depois.
 ```
