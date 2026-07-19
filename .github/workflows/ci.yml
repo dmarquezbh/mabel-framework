@@ -1,0 +1,100 @@
+name: CI
+
+# Onda 🟢 — pipeline de PR do Mabel.
+#   • dotnet-tests : os 3 projetos xUnit (Core/Renderer/Wasi.Protocol) no Linux — GATE.
+#   • windows-host : cross-build do host WPF a partir do Linux (EnableWindowsTargeting) — GATE.
+#   • wit-lint     : higiene estrutural dos .wit (GATE) + parse wasm-tools (advisory).
+# Os hosts nativos (Android/iOS/macOS) rodam em native-hosts.yml (best-effort).
+
+on:
+  push:
+    branches: [main, "feat/**", "spike/**", "fix/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  dotnet-tests:
+    name: .NET tests (Mabel.sln)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Mabel.sln
+
+      - name: Build
+        run: dotnet build Mabel.sln --configuration Release --no-restore
+
+      - name: Test
+        run: >
+          dotnet test Mabel.sln
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-test-results
+          path: TestResults/**/*.trx
+          if-no-files-found: ignore
+
+  windows-host:
+    name: Windows host (WPF cross-build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # EnableWindowsTargeting baixa os targeting packs Windows Desktop no NuGet:
+      # o WPF cross-compila do Linux sem toolchain especial.
+      - name: Build Windows host (win-x64)
+        run: >
+          dotnet build src/Mabel.Host.Windows/Mabel.Host.Windows.csproj
+          --configuration Release
+          -r win-x64
+
+  wit-lint:
+    name: WIT lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # GATE: higiene estrutural — roda em qualquer runner, sem toolchain wasm.
+      - name: Structural WIT lint
+        run: bash tools/wit-lint.sh
+
+      # ADVISORY: parse completo com wasm-tools. Enquanto o WIT é north-star
+      # (não bindgen-compilado), a falha aqui não bloqueia o PR — só sinaliza.
+      - name: Install wasm-tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-tools
+
+      - name: wasm-tools parse (advisory)
+        continue-on-error: true
+        run: |
+          set -x
+          wasm-tools component wit src/Mabel.Wasi.Protocol/Sdui/wit
+          wasm-tools component wit src/Mabel.Wasi.Protocol/Capabilities/wit

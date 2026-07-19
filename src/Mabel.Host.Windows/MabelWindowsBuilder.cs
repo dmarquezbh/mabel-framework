@@ -87,6 +87,18 @@ public sealed class MabelWindowsBuilder
     /// NavStack ativo (p/ --selftest simular push/pop).
     public NavHost? Nav { get; private set; }
 
+    // ── Onda 🟢: error boundaries por subárvore ───────────────────────────────
+    // Se a construção de um nó lança (dados inválidos, tipo quebrado, bug), a
+    // subárvore é ISOLADA: renderiza um placeholder de erro no lugar e a falha vai
+    // pro sink de telemetria — os IRMÃOS e o resto da tela seguem vivos. Estende o
+    // placeholder tipo-200 (BuildFallback) pra qualquer exceção de render.
+    /// Dreno de telemetria de erros de render (ligado a log/New Relic pelo app).
+    public ISduiErrorSink? ErrorSink { get; set; }
+    /// Liga/desliga o isolamento por subárvore (default on). Off ⇒ exceções sobem.
+    public bool ErrorBoundariesEnabled { get; set; } = true;
+    /// Quantas subárvores foram isoladas por falha de render (telemetria).
+    public int ErrorBoundariesTriggered { get; private set; }
+
     public void SetContainerWidth(double w) => _containerWidth = w;
 
     public FrameworkElement Build(SduiDocument doc)
@@ -97,7 +109,34 @@ public sealed class MabelWindowsBuilder
         return Build(doc.Root);
     }
 
+    // Error boundary por nó: isola falhas de render de UMA subárvore sem derrubar
+    // os irmãos. Cada Build(child) passa por aqui, então a exceção é contida no
+    // nó mais próximo que falhou; o pai continua montando os demais filhos.
     private FrameworkElement Build(SduiNode node)
+    {
+        if (!ErrorBoundariesEnabled) return BuildCore(node);
+        try
+        {
+            return BuildCore(node);
+        }
+        catch (Exception ex)
+        {
+            ErrorBoundariesTriggered++;
+            var kind = ex is SduiInvalidNodeException ? SduiErrorKind.InvalidData : SduiErrorKind.RenderFailure;
+            ErrorSink?.Report(new SduiRenderError
+            {
+                NodeId = node.Id,
+                TypeCode = (byte)node.Type,
+                Kind = kind,
+                Message = ex.Message,
+                ExceptionType = ex.GetType().Name,
+            });
+            Console.WriteLine($"[error-boundary] node={node.Id} type={(byte)node.Type} {kind}: {ex.Message}");
+            return BuildErrorPlaceholder(node, ex.Message);
+        }
+    }
+
+    private FrameworkElement BuildCore(SduiNode node)
     {
         NodeCount++;
         Counts[node.Type] = Counts.TryGetValue(node.Type, out var c) ? c + 1 : 1;
@@ -258,6 +297,30 @@ public sealed class MabelWindowsBuilder
                 FallbackRenderChildren++;
                 return BuildStack(node, Orientation.Vertical); // container transparente
         }
+    }
+
+    // Placeholder de erro (error boundary): mesmo idioma visual do fallback
+    // tipo-200, mas em vermelho — sinaliza subárvore isolada por falha de render.
+    private FrameworkElement BuildErrorPlaceholder(SduiNode node, string reason)
+    {
+        var typeName = node.Type.IsKnown() ? node.Type.ToString() : $"type-{(byte)node.Type}";
+        return new Border
+        {
+            Child = new TextBlock
+            {
+                Text = $"⚠ {typeName} '{node.Id}': {reason}",
+                FontSize = 12,
+                Foreground = Brush(0xB00020FF),
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+            Background = Brush(0xFFE5E5FF),
+            BorderBrush = Brush(0xF0B0B0FF),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
     }
 
     private ScrollViewer BuildScroll(SduiNode node)

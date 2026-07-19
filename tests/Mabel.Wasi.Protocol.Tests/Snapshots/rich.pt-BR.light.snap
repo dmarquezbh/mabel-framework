@@ -1,0 +1,6 @@
+# sdui-snapshot v3 host=v3 light locale=pt-BR
+Screen id=root bg=#FFFFFFFF spacing=12
+  Text id=title fg=#111111FF text="Olá, Daniel"
+  TextField id=name bg=#FFFFFFFF default="" field=name placeholder=Nome validation=1
+  Button id=submit fg=#2D6CDFFF onTap=submit text=OK
+  !placeholder id=future type=200 reason=unknown-type

@@ -1,0 +1,68 @@
+name: Native hosts
+
+# Onda 🟢 — build dos hosts NATIVOS por plataforma. Estes hosts NÃO fazem parte
+# de Mabel.sln e dependem de toolchains pesadas (Android SDK, xtool/Swift). São
+# BEST-EFFORT (continue-on-error) enquanto os runners não têm o setup provado —
+# "a validar no 1º run". O gate real de PR é o ci.yml (.NET + WIT).
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Android host (Gradle)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build (Gradle)
+        working-directory: src/Mabel.Host.Android
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
+
+  macos-host:
+    name: macOS host (Swift)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build macOS host
+        working-directory: src/Mabel.Host.MacOS
+        run: |
+          if [ -x ./build-macos.sh ]; then
+            bash ./build-macos.sh
+          else
+            swift build
+          fi
+
+  ios-host:
+    name: iOS host (xtool, sem Mac assinado)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # xtool compila/assina iOS sem conta paga (base provada no repo). O setup
+      # completo (instalar xtool + toolchain Swift wasm) é a validar no 1º run.
+      - name: Build iOS host (Swift package)
+        working-directory: src/Mabel.Host.Ios
+        run: swift build || echo "iOS host build a validar no 1º run (xtool setup pendente)"

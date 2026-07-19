@@ -65,11 +65,25 @@ Windows/WPF renderizando; testes de round-trip/compat em `Mabel.Wasi.Protocol.Te
 - 🟡 **Lifecycle** — hooks `onAppear`/`onDisappear` + Tabs + deep-link (rota nomeada + params, já na v2).
   Falta: restauração de estado, back-stack por-aba.
 
-**Developer Experience:**
-- 🟢 **DevTools** — inspector de árvore SDUI, overlay de estado, time-travel (base no ADR 0008).
-- 🟢 **Testing** — harness de snapshot de descriptor cross-platform, testes de contrato de capability.
-- 🟢 **Error boundaries** — nós de fallback por subárvore, telemetria de erro, degradação graciosa (já iniciada no schema v2).
-- 🟢 **CI** — pipeline por plataforma (os 3 xUnit Linux + build Android/Windows/macOS/iOS + lint WIT).
+**Developer Experience:** — Onda 🟢 entregue (contrato puro em
+`Mabel.Wasi.Protocol/DevTools/*` + `Sdui/ErrorBoundary.cs`; testado no WSL em
+`Mabel.Wasi.Protocol.Tests`; host Windows com `--inspect` e error boundary).
+- 🟢 **DevTools** — `SduiInspector`: dump navegável da árvore (texto `│├─` + JSON
+  hierárquico) com tipos/ids/props/**tokens resolvidos** (tema ativo) + **texto
+  localizado** (locale ativo) + estado inicial dos inputs; modo `--inspect`/
+  `--inspect-json` no host Windows. Falta: overlay de estado ao vivo + time-travel.
+- 🟢 **Testing** — `SduiSnapshot`: harness de snapshot **semântico** (não-pixel) do
+  descritor resolvido, determinístico e cross-host, comparado com baseline
+  versionado (`Snapshots/*.snap`, atualiza com `MABEL_UPDATE_SNAPSHOTS=1`). Falta:
+  testes de contrato de capability.
+- 🟢 **Error boundaries** — `SduiErrorBoundary`: fallback POR SUBÁRVORE — um nó que
+  falha ao renderizar (probe do host lança / dados inválidos / tipo quebrado) é
+  isolado num placeholder de erro sem derrubar os irmãos + telemetria
+  (`ISduiErrorSink`); estende o placeholder tipo-200 pra qualquer exceção. Host
+  Windows envolve cada `Build(nó)` no boundary.
+- 🟢 **CI** — `.github/workflows/ci.yml` (GATE: 3 xUnit Linux + cross-build do host
+  Windows + `tools/wit-lint.sh`; advisory: parse `wasm-tools`) +
+  `native-hosts.yml` (Android/macOS/iOS best-effort, a validar no 1º run).
 
 ---
 

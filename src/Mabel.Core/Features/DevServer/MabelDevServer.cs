@@ -285,6 +285,9 @@ public sealed class MabelDevServer : IDisposable
         _watcher.Filters.Add("*.cs");
         _watcher.Filters.Add("*.css");
         _watcher.Filters.Add("*.html");
+        // Onda 🟢: HMR do descritor SDUI — mudanças no .json do descriptor também
+        // disparam reload (o host rebaixa/re-renderiza a árvore sem rebuild do WASM).
+        _watcher.Filters.Add("*.json");
 
         _debounceTimer = new System.Timers.Timer(500) { AutoReset = false };
         _debounceTimer.Elapsed += (_, _) =>

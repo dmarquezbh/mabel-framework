@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Mabel.Wasi.Protocol.DevTools;
 using Mabel.Wasi.Protocol.Sdui;
 
 namespace Mabel.Host.Windows;
@@ -29,6 +30,8 @@ public static class Program
         bool onda2 = args.Contains("--onda2");
         bool onda3 = args.Contains("--onda3");
         bool dark = args.Contains("--dark");
+        bool inspect = args.Contains("--inspect");
+        bool inspectJson = args.Contains("--inspect-json");
         string? locale = LocaleArg(args);
 
         var jsonPath = LocateDescriptor(args, onda2, onda3);
@@ -49,6 +52,23 @@ public static class Program
         Console.WriteLine($"descritor: {Path.GetFileName(jsonPath)}");
         Console.WriteLine($"SDUI schemaVersion={doc.SchemaVersion}  host suporta v{SduiSchema.CurrentVersion}  root={doc.Root.Id} ({doc.Root.Type})");
 
+        // ── Onda 🟢: DevTools — dump da árvore SDUI (inspector) ──────────────
+        // Headless: resolve tema/locale ativos e imprime a árvore navegável (texto
+        // ou JSON) sem abrir janela WPF. Espelha o que o host renderiza ao vivo.
+        if (inspect || inspectJson)
+        {
+            var inspectOpts = new SduiInspectorOptions
+            {
+                ThemeMode = dark ? SduiThemeMode.Dark : (doc.ThemeMode ?? SduiThemeMode.System),
+                SystemPrefersDark = dark,
+                Locale = locale ?? doc.Localization?.DefaultLocale,
+            };
+            Console.WriteLine(inspectJson
+                ? SduiInspector.ToJson(doc, inspectOpts)
+                : SduiInspector.ToText(doc, inspectOpts));
+            return 0;
+        }
+
         var app = new Application();
         var builder = new MabelWindowsBuilder();
         // Onda 🟡: tema (claro/escuro) + locale ativos (via flags de CLI).
@@ -56,6 +76,9 @@ public static class Program
         if (locale is not null) builder.SetLocale(locale);
         builder.OnLifecycle = (node, action) =>
             Console.WriteLine($"[lifecycle] {node.Id} -> {action.Name}");
+        // Onda 🟢: error boundaries — telemetria de subárvores isoladas por falha.
+        builder.ErrorSink = new SduiDelegateErrorSink(e =>
+            Console.WriteLine($"[telemetry] error node={e.NodeId} type={e.TypeCode} kind={e.Kind}: {e.Message}"));
         // selftest/screenshot são renders estáticos (sem clock de animação).
         builder.StaticRender = selftest || ShotPath(args) is not null;
 
@@ -185,6 +208,7 @@ public static class Program
         Console.WriteLine($"forms         : {builder.InputsBuilt} input(s) [{string.Join(", ", builder.Inputs.Keys)}]");
         Console.WriteLine($"animacoes     : {builder.AnimationsApplied} declaradas");
         Console.WriteLine($"lifecycle     : {builder.LifecycleHooks} hook(s) onAppear/onDisappear");
+        Console.WriteLine($"err-boundary  : {builder.ErrorBoundariesTriggered} subárvore(s) isolada(s) por falha de render");
         bool v3ok = !v3 || (builder.ThemeTokensResolved > 0 && builder.I18nResolved > 0 && builder.InputsBuilt > 0);
         if (v3) Console.WriteLine($"v3 funcional  : {(v3ok ? "OK" : "FALTOU (theming/i18n/forms)")}");
 
