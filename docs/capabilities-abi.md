@@ -393,7 +393,11 @@ se descobre no device"). Ver `src/Mabel.Host.Ios/Sources/MabelHost/Capabilities/
   descobre rodando no device.
 - **Validação no device:** câmera, GPS, biometria (Face ID), haptics e BLE exigem hardware
   real (simulador não tem). Notifications/keychain/clipboard/share exercitáveis mais amplamente.
-- ⚠️ **Build via xtool NÃO verificado neste ambiente:** a WSL (Ubuntu 26.04) não tem toolchain
-  Swift nem Darwin SDK (swiftly: "Unsupported Linux platform"); o spike rodou noutra máquina.
-  Código escrito e revisado à mão. Build: `cd samples/capabilities-harness && xtool dev build`.
+- ✅ **Build via xtool VERIFICADO (verde):** `cd samples/capabilities-harness && xtool dev build`
+  → "Build complete!" + `xtool/MabelCapabilitiesHarness.app`. O Darwin SDK do xtool já estava
+  na máquina; instalei o toolchain Swift 6.1 host (casando o SDK, iPhoneOS 18.5) em `~/swift`.
+  Erros residuais pegos pelo compilador e corrigidos (nome do path-dep = diretório;
+  `CapStatus: Error`; `RenderCommand` público; `public init` nos payloads cross-módulo;
+  `infoPath:` no xtool.yml). Nota: `swiftly` não roda no Ubuntu 26.04 ("Unsupported Linux
+  platform") — o toolchain foi baixado direto do swift.org (ubuntu24.04, glibc forward-compat).
 ```
