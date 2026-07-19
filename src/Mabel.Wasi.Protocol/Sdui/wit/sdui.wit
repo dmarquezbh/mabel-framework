@@ -1,0 +1,204 @@
+// =============================================================================
+// mabel:sdui — descritor semântico de UI (north star, Component Model-flavored).
+//
+// Espelha Mabel.Wasi.Protocol/Sdui/*.cs. É o CONTRATO SEMÂNTICO platform-neutral:
+// o guest descreve CONTROLES; cada host mapeia pra widgets nativos (UIKit no iOS).
+//
+// ⚠️ IMPORTANTE — igual ao mabel:capabilities: este WIT NÃO é compilado por
+// wit-bindgen hoje. O transporte real v2 é JSON (SduiJson: camelCase, enums como
+// número, omite null), lido pelo host Swift (MabelSdui.swift). O WIT documenta a
+// forma canônica e prepara um transporte binário WASI futuro sem mudar o modelo.
+//
+// Cobertura desta versão (Onda 1 — fundacionais do schema):
+//   • versionamento + degradação graciosa (unknown-fallback, min-schema-version)
+//   • acessibilidade (a11y)
+//   • layout responsivo/adaptativo (size-class, breakpoints, flexbox, safe-area)
+//   • listas virtualizadas (list-data + item-template + bind)
+//   • navegação declarativa (nav-stack, nav, navigate)
+// =============================================================================
+
+package mabel:sdui@0.2.0;
+
+interface descriptor {
+    // ── Primitivos ────────────────────────────────────────────────────────────
+
+    /// Cor RGBA empacotada 0xRRGGBBAA (mesmo formato do render-command).
+    type rgba = u32;
+
+    /// Par chave/valor (mapas achatados; JSON vira objeto).
+    record kv {
+        key: string,
+        value: string,
+    }
+
+    /// Insets top/right/bottom/left em px lógicos.
+    record edges {
+        top: f32,
+        right: f32,
+        bottom: f32,
+        left: f32,
+    }
+
+    // ── Enums de layout/estilo ──────────────────────────────────────────────────
+
+    enum node-type {
+        screen, vstack, hstack, scroll-view, list, card, text, button,
+        image, badge, progress-bar, divider, spacer, nav-stack,
+    }
+
+    enum axis { vertical, horizontal }
+    enum align { start, center, end, stretch }
+    enum font-weight { regular, medium, semibold, bold }
+    enum wrap { no-wrap, wrap }
+    enum size-class { any, compact, regular }
+
+    /// Bordas do safe-area respeitadas por um container.
+    flags safe-area { top, right, bottom, left }
+
+    // ── Degradação graciosa (OTA) ─────────────────────────────────────────────────
+
+    /// O que o host faz com um nó que não reconhece (type novo, ou
+    /// min-schema-version acima da versão dele).
+    enum unknown-fallback {
+        /// Renderiza os filhos como container transparente (default do contrato).
+        render-children,
+        /// Placeholder visível "não suportado" (dev/HML).
+        placeholder,
+        /// Pula o nó e a subárvore silenciosamente.
+        ignore,
+    }
+
+    // ── Acessibilidade ────────────────────────────────────────────────────────────
+
+    enum a11y-role {
+        none, button, header, link, image, text, adjustable, search,
+        summary, toggle, progress-indicator,
+    }
+
+    flags a11y-traits {
+        selected, disabled, updates-frequently, plays-sound,
+        starts-media-session, causes-page-turn,
+    }
+
+    record a11y {
+        label: option<string>,
+        role: option<a11y-role>,
+        hint: option<string>,
+        hidden: option<bool>,
+        value: option<string>,
+        traits: option<a11y-traits>,
+    }
+
+    // ── Navegação ───────────────────────────────────────────────────────────────
+
+    enum nav-kind { push, pop, replace, root, pop-to }
+
+    record navigate {
+        kind: nav-kind,
+        route: option<string>,
+        params: option<list<kv>>,
+    }
+
+    record nav {
+        route: option<string>,
+        title: option<string>,
+        modal: option<bool>,
+        hides-nav-bar: option<bool>,
+    }
+
+    // ── Ação semântica ────────────────────────────────────────────────────────────
+
+    record action {
+        name: string,
+        args: option<list<kv>>,
+        navigate: option<navigate>,
+    }
+
+    // ── Props ─────────────────────────────────────────────────────────────────────
+
+    record props {
+        // layout
+        spacing: option<f32>,
+        padding: option<edges>,
+        align: option<align>,
+        width: option<f32>,
+        height: option<f32>,
+        flex: option<f32>,
+        axis: option<axis>,
+        // box
+        background: option<rgba>,
+        corner-radius: option<f32>,
+        border-color: option<rgba>,
+        border-width: option<f32>,
+        // texto
+        text: option<string>,
+        font-size: option<f32>,
+        color: option<rgba>,
+        weight: option<font-weight>,
+        // imagem
+        src: option<string>,
+        // progress
+        value: option<f32>,
+        // layout responsivo / flexbox refinado
+        min-width: option<f32>,
+        max-width: option<f32>,
+        min-height: option<f32>,
+        max-height: option<f32>,
+        aspect-ratio: option<f32>,
+        flex-grow: option<f32>,
+        flex-shrink: option<f32>,
+        flex-basis: option<f32>,
+        wrap: option<wrap>,
+        safe-area: option<safe-area>,
+        // dados semânticos
+        data: option<list<kv>>,
+    }
+
+    /// Variação condicional de props por classe de tamanho / breakpoint.
+    record responsive-override {
+        width-class: option<size-class>,
+        height-class: option<size-class>,
+        min-container-width: option<f32>,
+        props: props,
+    }
+
+    // ── Listas virtualizadas ────────────────────────────────────────────────────
+
+    record list-item {
+        id: string,
+        data: option<list<kv>>,
+        on-tap: option<action>,
+    }
+
+    record list-data {
+        item-template: node,
+        items: option<list<list-item>>,
+        virtualized: bool,
+        axis: option<axis>,
+        estimated-item-extent: option<f32>,
+        count: option<u32>,
+        window-start: option<u32>,
+    }
+
+    // ── Nó + documento ────────────────────────────────────────────────────────────
+
+    record node {
+        id: string,
+        %type: node-type,
+        props: option<props>,
+        children: option<list<node>>,
+        on-tap: option<action>,
+        a11y: option<a11y>,
+        fallback: option<unknown-fallback>,
+        min-schema-version: option<u32>,
+        responsive: option<list<responsive-override>>,
+        list: option<list-data>,
+        nav: option<nav>,
+        bind: option<list<kv>>,
+    }
+
+    record document {
+        schema-version: u32,
+        root: node,
+    }
+}
