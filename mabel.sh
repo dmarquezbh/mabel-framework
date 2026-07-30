@@ -29,12 +29,17 @@ set_language() {
         L_OPT_5="5) 🖥️  Add Desktop Support (Photino) - In Progress"
         L_TITLE_DEV_OPS="--- DEVELOPMENT ---"
         L_OPT_6="6) 🚀 Build & Deploy (xtool dev)"
-        L_OPT_7="7) 📜 View Logs (Debug & Bridge)"
+        L_OPT_6X="7) 🍎 Build & Deploy (Xcode native) - requires real Mac + Xcode.app"
+        L_OPT_7="8) 📜 View Logs (Debug & Bridge)"
         L_TITLE_SYS="--- SYSTEM ---"
-        L_OPT_8="8) 🏗️  Export Mabel Boilerplate for GitHub"
-        L_OPT_9="9) 🛠️  Install Mabel CLI (~/bin)"
-        L_OPT_10="10) 🌐 Change Language (Para Português)"
-        L_OPT_EXIT="11) 🚪 Exit"
+        L_OPT_8="9) 🏗️  Export Mabel Boilerplate for GitHub"
+        L_OPT_9="10) 🛠️  Install Mabel CLI (~/bin)"
+        L_OPT_10="11) 🌐 Change Language (Para Português)"
+        L_OPT_EXIT="12) 🚪 Exit"
+        L_XCODE_NO_XCODEBUILD="❌ xcodebuild not found — this option requires a real Mac with Xcode.app installed."
+        L_XCODE_USE_XTOOL="Use option 6 (xtool dev) for Linux/WSL instead."
+        L_XCODE_ONLY_CLT="❌ Only Command Line Tools detected (%s), not a full Xcode.app."
+        L_XCODE_INSTALL_HINT="Install Xcode from the App Store, then: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
         L_PROMPT="🦋 Option: "
         L_ERR_REQUIRED="❌ Error: Name and Bundle ID are required."
         L_APP_NAME_PROMPT="App Name: "
@@ -67,12 +72,17 @@ set_language() {
         L_OPT_5="5) 🖥️  Add Desktop Support (Photino) - Em Progresso"
         L_TITLE_DEV_OPS="--- DESENVOLVIMENTO ---"
         L_OPT_6="6) 🚀 Build & Deploy (xtool dev)"
-        L_OPT_7="7) 📜 Ver Logs (Debug & Bridge)"
+        L_OPT_6X="7) 🍎 Build & Deploy (Xcode nativo) - requer Mac de verdade + Xcode.app"
+        L_OPT_7="8) 📜 Ver Logs (Debug & Bridge)"
         L_TITLE_SYS="--- SISTEMA ---"
-        L_OPT_8="8) 🏗️  Export Mabel Boilerplate for GitHub"
-        L_OPT_9="9) 🛠️  Instalar Mabel CLI (~/bin)"
-        L_OPT_10="10) 🌐 Mudar Idioma (To English)"
-        L_OPT_EXIT="11) 🚪 Sair"
+        L_OPT_8="9) 🏗️  Export Mabel Boilerplate for GitHub"
+        L_OPT_9="10) 🛠️  Instalar Mabel CLI (~/bin)"
+        L_OPT_10="11) 🌐 Mudar Idioma (To English)"
+        L_OPT_EXIT="12) 🚪 Sair"
+        L_XCODE_NO_XCODEBUILD="❌ xcodebuild não encontrado — essa opção exige um Mac de verdade com Xcode.app instalado."
+        L_XCODE_USE_XTOOL="Use a opção 6 (xtool dev) pra Linux/WSL."
+        L_XCODE_ONLY_CLT="❌ Só as Command Line Tools detectadas (%s), não um Xcode.app completo."
+        L_XCODE_INSTALL_HINT="Instale o Xcode pela App Store e rode: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
         L_PROMPT="🦋 Opção: "
         L_ERR_REQUIRED="❌ Erro: Nome e Bundle ID são obrigatórios."
         L_APP_NAME_PROMPT="Nome do App: "
@@ -121,6 +131,7 @@ show_menu() {
     echo ""
     echo -e "${YELLOW}$L_TITLE_DEV_OPS${NC}"
     echo "  $L_OPT_6"
+    echo "  $L_OPT_6X"
     echo "  $L_OPT_7"
     echo ""
     echo -e "${YELLOW}$L_TITLE_SYS${NC}"
@@ -272,6 +283,30 @@ EOF
     echo -e "$L_RUN_INSTR"
 }
 
+# Build & Deploy via Xcode nativo (xcodebuild + xcrun devicectl), sem xtool.
+# Aditivo: so faz sentido num Mac de verdade com Xcode.app; no xtool (opcao 6)
+# continua sendo o caminho certo pra Linux/WSL, onde xcodebuild nem existe.
+# Reusa a implementacao real em Mabel.Core/Mabel.Cli (XcodeNativeDeploy) em vez
+# de duplicar a logica de build/signing/install/launch aqui em bash.
+xcode_native_deploy() {
+    if ! command -v xcodebuild &> /dev/null; then
+        echo -e "${RED}$L_XCODE_NO_XCODEBUILD${NC}"
+        echo -e "${YELLOW}$L_XCODE_USE_XTOOL${NC}"
+        return 1
+    fi
+
+    XCODE_PATH=$(xcode-select -p 2>/dev/null)
+    if [[ "$XCODE_PATH" != *"Xcode.app/Contents/Developer" ]]; then
+        printf "${RED}${L_XCODE_ONLY_CLT}${NC}\n" "$XCODE_PATH"
+        echo -e "${YELLOW}$L_XCODE_INSTALL_HINT${NC}"
+        return 1
+    fi
+
+    read -p "$L_PATH_PROMPT" p
+    MABEL_REPO_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+    dotnet run --project "$MABEL_REPO_DIR/src/Mabel.Cli" -- deploy "$p" --platform ios --build-tool xcode
+}
+
 export_mabel_boilerplate() {
     read -p "$L_FOLDER_PROMPT" FOLDER
     if [ -z "$FOLDER" ]; then FOLDER="mabel-framework"; fi
@@ -321,11 +356,12 @@ while true; do
         4) scaffold_mabel ;;
         5) echo -e "${BLUE}Desktop (Photino) coming soon...${NC}" ;;
         6) read -p "$L_PATH_PROMPT" p; cd "$p" && xtool dev ;;
-        7) idevicesyslog | grep -E "MABEL-BRIDGE|JS:|BlazorOS" ;;
-        8) export_mabel_boilerplate ;;
-        9) install_mabel_cli ;;
-        10) toggle_language ;;
-        11) exit 0 ;;
+        7) xcode_native_deploy ;;
+        8) idevicesyslog | grep -E "MABEL-BRIDGE|JS:|BlazorOS" ;;
+        9) export_mabel_boilerplate ;;
+        10) install_mabel_cli ;;
+        11) toggle_language ;;
+        12) exit 0 ;;
         *) echo "$L_INVALID_OPT" ;;
     esac
 done
