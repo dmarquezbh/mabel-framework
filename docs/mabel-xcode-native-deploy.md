@@ -126,3 +126,72 @@ via `mabel create` → `mabel deploy --build-tool xcode`:
   teste): o bloqueio e **so** a Platform ausente, nao a forma do
   `Package.swift` — os dois casos falham com o mesmo erro na mesma etapa.
   Ou seja, o scaffold existente nao precisa mudar pra esse fluxo funcionar.
+
+## Follow-up (2026-07-30) — Platform resolvida, novo bloqueio mais profundo
+
+Retomado neste mesmo Mac apos o componente "iOS Platform" ser instalado via
+Xcode > Settings > Components. Confirmado com `xcrun devicectl list devices`:
+o iPhone fisico **test-device-1** (UDID `[UDID-REDACTED]`, iOS 18.7.9,
+iPhone XS Max) aparece agora como `connected` (antes: `connected (no DDI)`).
+
+Suite de testes unitarios existente (60 testes: `Mabel.Core.Tests` 23,
+`Mabel.Wasi.Protocol.Tests` 11, `Mabel.Renderer.Tests` 26) — **todos
+passando**, nenhuma regressao.
+
+Rodando `mabel create hello-real --bundle-id com.mabel.hello-real` seguido
+de `mabel deploy . --build-tool xcode --device [UDID-REDACTED]`:
+
+- ✅ **O bloqueio original esta 100% resolvido**: `xcodebuild build -destination
+  "id=[UDID-REDACTED]"` roda ate o fim e imprime `** BUILD SUCCEEDED **`
+  contra o device fisico real — a mensagem "iOS 26.5 is not installed" nao
+  aparece mais.
+- ⛔ **Novo bloqueio, mais profundo, nunca alcancado antes** (o fluxo original
+  falhava mais cedo, na resolucao de destino, entao isso nunca tinha sido
+  exercitado de verdade): o build compila mas **nao produz nenhum `.app`**.
+  Diagnostico, com evidencia:
+  1. `xcodebuild -showBuildSettings -destination "id=<udid>"` retorna vazio
+     e imprime `Supported platforms for the buildables in the current scheme
+     is empty` — isso acontece **para qualquer product type** (testado com
+     `.library`/`.target`, o scaffold atual, e com `.executable`/
+     `.executableTarget`). Em ambos os casos o `xcodebuild build` "funciona"
+     mas so gera um objeto relocavel (`.o`, caso library) ou um executavel
+     Mach-O nu (caso executable) — nunca um bundle `.app`.
+  2. Isso confirma que o empacotamento de um `Package.swift` isolado (sem
+     `.xcodeproj`) num `.app` instalavel — Info.plist, wrapper de bundle,
+     assinatura como Application — e feito **internamente pela IDE do Xcode**
+     (Product > Run), e **nao existe via `xcodebuild` CLI** pra esse tipo de
+     projeto. `swift package generate-xcodeproj` (que geraria um `.xcodeproj`
+     de verdade com um target Application) **nao existe mais** no toolchain
+     atual (`error: Unknown subcommand or plugin name 'generate-xcodeproj'`).
+  3. Independente disso: `security find-identity -v -p codesigning` retornou
+     **0 identidades validas** neste Mac agora — ou seja, nenhuma conta Apple
+     ID esta de fato logada em Xcode > Settings > Accounts neste momento.
+     Esse e exatamente o pre-requisito manual que este doc ja apontava como
+     inevitavel (secao acima) — so que agora confirmado como realmente
+     pendente, nao apenas hipotetico.
+
+- **O que falta pra esse fluxo funcionar ponta a ponta contra hardware real**
+  (2 itens independentes, ambos necessarios):
+  1. **Manual, do Daniel:** logar com um Apple ID em Xcode > Settings >
+     Accounts neste Mac (sem isso, nao ha identidade de assinatura pra
+     nenhum caminho funcionar, nem o manual nem o automatico).
+  2. **Engenharia, no `XcodeNativeDeploy`:** mesmo com conta logada, o
+     `xcodebuild build` sozinho nao vai embrulhar o executavel num `.app`
+     instalavel — falta implementar a montagem manual do bundle (criar
+     `<Nome>.app/`, copiar o executavel + o `.bundle` de recursos ja gerado
+     pelo SwiftPM pra dentro dele, escrever um `Info.plist` com bundle ID/
+     versao/executavel, e assinar o bundle resultante com `codesign`) —
+     essencialmente reimplementando, pra esse fluxo alternativo, uma fatia
+     do que o `xtool` ja faz por conta propria. Isso e trabalho real de
+     escopo proprio (nao uma correcao de 1-2 linhas), e so pode ser
+     validado de ponta a ponta depois do item 1 acima. Nao foi implementado
+     nesta sessao pra evitar codigo de assinatura/empacotamento nao
+     testavel (sem identidade disponivel neste Mac agora, nenhuma tentativa
+     de instalar no device teria como ser verificada de verdade).
+
+Resumindo o estado real: o bloqueio de **plataforma** que motivou a retomada
+deste teste esta confirmado e definitivamente resolvido. O fluxo **ainda nao
+roda ponta a ponta** contra o device fisico — o motivo mudou, de "SDK da
+plataforma ausente" pra "falta conta Apple ID + falta montagem manual do
+`.app`", e o segundo item e trabalho de escopo proprio a ser planejado
+separadamente.
