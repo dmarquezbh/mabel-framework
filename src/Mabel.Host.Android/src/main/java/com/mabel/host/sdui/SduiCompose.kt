@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -180,12 +181,15 @@ private fun RenderNode(
             }
         }
 
+        // Text NAO limita linhas: um rotulo mais largo que o container quebra em vez
+        // de ser truncado. maxLines=1 aqui silenciosamente cortava conteudo, e o
+        // schema v1 nao tem prop pro guest pedir o contrario. Badge segue 1 linha
+        // por ser chip/pilula, onde uma linha e o comportamento correto.
         SduiNodeType.Text -> Text(
             text = boundText(node, p, binding) ?: "",
             color = colorOf(p?.color) ?: Color.Unspecified,
             fontSize = (p?.fontSize ?: 14f).sp,
             fontWeight = fontWeightOf(p?.weight),
-            maxLines = 1,
             modifier = m,
         )
 
@@ -315,6 +319,9 @@ private fun RenderFallback(
 @Composable
 private fun RenderColumn(node: SduiNode, onAction: (SduiAction, SduiNode) -> Unit, binding: Map<String, String>?, m: Modifier) {
     val p = node.props
+    // Stretch nao e um Alignment no Compose: o equivalente e fillMaxWidth nos
+    // FILHOS. Sem isso o Stretch caia no else -> Start e era um no-op silencioso.
+    val stretch = p?.align == SduiAlign.Stretch.raw
     Column(
         modifier = m.paddingOf(p),
         verticalArrangement = spacing(p),
@@ -324,13 +331,14 @@ private fun RenderColumn(node: SduiNode, onAction: (SduiAction, SduiNode) -> Uni
             else -> Alignment.Start
         },
     ) {
-        node.children.forEach { RenderChild(it, onAction, binding, this) }
+        node.children.forEach { RenderChild(it, onAction, binding, this, stretch) }
     }
 }
 
 @Composable
 private fun RenderRow(node: SduiNode, onAction: (SduiAction, SduiNode) -> Unit, binding: Map<String, String>?, m: Modifier) {
     val p = node.props
+    val stretch = p?.align == SduiAlign.Stretch.raw
     Row(
         modifier = m.paddingOf(p),
         horizontalArrangement = spacingH(p),
@@ -340,7 +348,7 @@ private fun RenderRow(node: SduiNode, onAction: (SduiAction, SduiNode) -> Unit, 
             else -> Alignment.Top
         },
     ) {
-        node.children.forEach { RenderChild(it, onAction, binding, this) }
+        node.children.forEach { RenderChild(it, onAction, binding, this, stretch) }
     }
 }
 
@@ -350,18 +358,41 @@ private fun RenderRow(node: SduiNode, onAction: (SduiAction, SduiNode) -> Unit, 
  * padrao pra preencher o espaco restante (igual ao host iOS).
  */
 @Composable
-private fun RenderChild(node: SduiNode, onAction: (SduiAction, SduiNode) -> Unit, binding: Map<String, String>?, scope: ColumnScope) {
+private fun RenderChild(
+    node: SduiNode,
+    onAction: (SduiAction, SduiNode) -> Unit,
+    binding: Map<String, String>?,
+    scope: ColumnScope,
+    stretch: Boolean = false,
+) {
     val isFillingList = node.type == SduiNodeType.List && node.list != null
     val grow = node.props?.flexGrow ?: node.props?.flex ?: (if (isFillingList) 1f else 0f)
-    val childMod = if (grow > 0f) with(scope) { Modifier.weight(grow).fillMaxWidth() } else Modifier
+    val childMod = when {
+        grow > 0f -> with(scope) { Modifier.weight(grow).fillMaxWidth() }
+        // Align=Stretch no eixo cruzado do Column = largura total. Um filho com
+        // Width explicito manda nele mesmo e nao e esticado.
+        stretch && node.props?.width == null -> Modifier.fillMaxWidth()
+        else -> Modifier
+    }
     RenderNode(node, onAction, binding, childMod)
 }
 
 /** Filho de Row: aplica flex/flexGrow -> weight no escopo da linha. */
 @Composable
-private fun RenderChild(node: SduiNode, onAction: (SduiAction, SduiNode) -> Unit, binding: Map<String, String>?, scope: RowScope) {
+private fun RenderChild(
+    node: SduiNode,
+    onAction: (SduiAction, SduiNode) -> Unit,
+    binding: Map<String, String>?,
+    scope: RowScope,
+    stretch: Boolean = false,
+) {
     val grow = node.props?.flexGrow ?: node.props?.flex ?: 0f
-    val childMod = if (grow > 0f) with(scope) { Modifier.weight(grow) } else Modifier
+    val childMod = when {
+        grow > 0f -> with(scope) { Modifier.weight(grow) }
+        // Eixo cruzado do Row = altura.
+        stretch && node.props?.height == null -> Modifier.fillMaxHeight()
+        else -> Modifier
+    }
     RenderNode(node, onAction, binding, childMod)
 }
 
