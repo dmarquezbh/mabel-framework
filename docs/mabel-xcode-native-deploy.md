@@ -195,3 +195,64 @@ roda ponta a ponta** contra o device fisico — o motivo mudou, de "SDK da
 plataforma ausente" pra "falta conta Apple ID + falta montagem manual do
 `.app`", e o segundo item e trabalho de escopo proprio a ser planejado
 separadamente.
+
+## Follow-up (2026-07-31) — montagem manual do `.app` implementada, novo bloqueio (WWDR ausente)
+
+Retomado apos o Daniel logar com Apple ID em Xcode > Settings > Accounts.
+
+**Item 1 do follow-up anterior (montagem manual do `.app`) — implementado:**
+
+1. **Scaffold corrigido** (`CreateProject.cs`): o produto do `Package.swift` do
+   `ios_app` mudou de `.library`/`.target` pra `.executable`/`.executableTarget`.
+   Confirmado com teste real: `xcodebuild build` agora produz um Mach-O
+   executavel de verdade (`Ld .../Debug-iphoneos/ios_app normal`, sem a flag
+   `-r` de objeto relocavel) em vez do `.o` que o `.library` gerava — sem essa
+   troca, nao ha nada pra empacotar (um `.o` nao e um binario executavel).
+2. **`XcodeNativeDeploy.AssembleAppBundle`** (novo): quando `xcodebuild build`
+   sozinho nao produz um `.app` (caso do `Package.swift` puro, sem
+   `.xcodeproj`), monta manualmente `<scheme>.app/` a partir do executavel —
+   copia o binario, copia o resource bundle do SwiftPM (`<pacote>_<target>.bundle`)
+   se existir, e escreve um `Info.plist` minimo (`BuildInfoPlist`, testavel
+   isoladamente).
+3. **`XcodeNativeDeploy.SignAppBundle`** (novo): assina o bundle com a primeira
+   identidade "Apple Development" valida do keychain
+   (`security find-identity -v -p codesigning`, parseada via
+   `ParseFirstCodesigningIdentity`, testavel isoladamente).
+4. Cobertura de teste: 5 testes novos em `XcodeNativeDeployTests.cs` (28 no
+   total do arquivo) incluindo um cenario de integracao completo — pre-cria o
+   executavel Mach-O falso, roda `Execute()` com `IShellExecutor`/`IFileSystem`
+   fakes, confirma que o `.app` e montado com `Info.plist` correto e que
+   `codesign` e chamado com a identidade certa.
+
+**Verificado contra o crow5 real (BUILD SUCCEEDED, mesmo device/UDID dos testes
+anteriores):** o fluxo agora avanca de "nenhum .app encontrado" pra tentar
+assinar de verdade — prova que a montagem do bundle funciona ponta a ponta ate
+o passo de assinatura.
+
+**Novo bloqueio encontrado (nao e o item 1 do Daniel — e mais fundo):** mesmo
+apos o Daniel criar o certificado "Apple Development" em Manage Certificates,
+`security find-identity -v -p codesigning` continua retornando **0 identidades
+validas**. Diagnostico: o certificado existe no keychain
+(`security find-certificate -c "Apple Development: Daniel Marques (2ZPCXMP4E4)"`
+confirma, com validade `2026-07-31` a `2027-07-31`), mas o certificado
+**intermediario** "Apple Worldwide Developer Relations Certification Authority"
+**nao esta instalado** no keychain — sem ele a cadeia de confianca do
+certificado de desenvolvimento nao valida, entao `find-identity` nao conta como
+identidade utilizavel mesmo com cert+chave presentes. `SignAppBundle` ja
+reporta essa causa raiz especifica no erro (nao so "sem identidade").
+
+**O que falta pra rodar ponta a ponta contra o device fisico:**
+1. **Manual, do Daniel:** instalar o certificado intermediario WWDR no
+   keychain — normalmente Xcode faz isso sozinho ao adicionar a conta/gerar o
+   certificado; como nao aconteceu aqui, o caminho mais direto e reabrir
+   Xcode > Settings > Accounts, selecionar o time, e forcar um refresh (ou
+   baixar o certificado G-series correspondente diretamente da pagina oficial
+   da Apple Certificate Authority e importar no keychain).
+2. **Ainda em aberto (fora do escopo verificavel sem o item 1 resolvido):**
+   mesmo com identidade valida, instalar num device fisico normalmente exige
+   tambem um **provisioning profile** embutido no bundle listando o UDID do
+   device — `-allowProvisioningUpdates` no `xcodebuild` so gerencia isso pra
+   schemes de projeto Xcode de verdade (com target Application), nao pro
+   fluxo de `Package.swift` puro montado a mao aqui. Se o `codesign` passar
+   mas o `devicectl device install app` falhar por profile ausente, esse e o
+   proximo item de engenharia a resolver (fora do escopo desta rodada).

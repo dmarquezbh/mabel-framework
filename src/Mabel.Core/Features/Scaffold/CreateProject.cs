@@ -59,9 +59,9 @@ import PackageDescription
 let package = Package(
     name: "ios_app",
     platforms: [.iOS(.v15)],
-    products: [.library(name: "ios_app", targets: ["ios_app"])],
+    products: [.executable(name: "ios_app", targets: ["ios_app"])],
     targets: [
-        .target(name: "ios_app", resources: [.copy("Resources")])
+        .executableTarget(name: "ios_app", resources: [.copy("Resources")])
     ]
 )
 """);
