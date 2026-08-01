@@ -230,6 +230,36 @@ public class SduiRoundTripTests
     }
 
     [Fact]
+    public void TextField_RoundTripsPlaceholderOnChangeAndSubmit()
+    {
+        var doc = new SduiDocument
+        {
+            SchemaVersion = SduiSchema.CurrentVersion,
+            Root = new SduiNode
+            {
+                Id = "field:busca",
+                Type = SduiNodeType.TextField,
+                MinSchemaVersion = 3,
+                Props = new SduiProps { Placeholder = "Digite algo..." },
+                OnChange = new SduiAction("form:digitar"),
+                OnTap = new SduiAction("form:enviar"),
+            },
+        };
+
+        AssertStable(doc);
+
+        var back = SduiJson.Deserialize(SduiJson.Serialize(doc))!;
+        Assert.Equal(SduiNodeType.TextField, back.Root.Type);
+        Assert.Equal("Digite algo...", back.Root.Props!.Placeholder);
+        Assert.Equal("form:digitar", back.Root.OnChange!.Name);
+        Assert.Equal("form:enviar", back.Root.OnTap!.Name);
+        Assert.Null(back.Root.ResolveFallback(hostSchemaVersion: SduiSchema.CurrentVersion));
+        // Host antigo (v2, antes do TextField existir) recebe RenderChildren —
+        // degradação graciosa, não quebra.
+        Assert.Equal(SduiUnknownFallback.RenderChildren, back.Root.ResolveFallback(hostSchemaVersion: 2));
+    }
+
+    [Fact]
     public void CanonicalJson_IsCamelCase_AndEnumsAsNumbers()
     {
         var doc = new SduiDocument

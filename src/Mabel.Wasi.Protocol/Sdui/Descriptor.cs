@@ -49,6 +49,10 @@ public enum SduiNodeType : byte
     /// Pilha de navegação: hospeda Screens e executa ações navigate:push/pop/…
     /// → UINavigationController. Ver Navigation.cs.
     NavStack    = 0x0E,
+    /// Campo de texto editável (Props.Placeholder = dica; texto atual entregue
+    /// via OnChange/OnTap, nunca lido de volta em Props — o host é dono do
+    /// estado de edição). → UITextField / OutlinedTextField. Onda 3 (v3).
+    TextField   = 0x0F,
 }
 
 public enum SduiAxis : byte { Vertical = 0, Horizontal = 1 }
@@ -144,6 +148,10 @@ public sealed record SduiProps
     /// Metadados arbitrários do nó (campos do card: credor, código, valor...).
     /// Devolvidos ao app no tap, junto da ação. Não afetam layout/estilo.
     public IReadOnlyDictionary<string, string>? Data { get; init; }
+
+    // ── TextField ───────────────────────────────────────────────────────────────
+    /// Texto de dica exibido quando o campo está vazio (TextField).
+    public string? Placeholder { get; init; }
 }
 
 /// <summary>
@@ -158,7 +166,18 @@ public sealed record SduiNode
     public SduiProps? Props { get; init; }
     public IReadOnlyList<SduiNode>? Children { get; init; }
     /// Ação disparada no tap (opcional). Presença ⇒ o host torna o nó clicável.
+    /// Em um <see cref="SduiNodeType.TextField"/>, reaproveitado como "submit"
+    /// (tecla Enter/Done) — o host entrega uma cópia da ação com Args["text"]
+    /// = conteúdo atual do campo, mesclado por cima do Args declarado aqui.
     public SduiAction? OnTap { get; init; }
+
+    /// Ação disparada a cada mudança de texto de um <see cref="SduiNodeType.TextField"/>
+    /// (opcional; ausência ⇒ o host não notifica enquanto o usuário digita, só no
+    /// submit via OnTap). Mesma convenção de entrega do OnTap: o host manda uma
+    /// cópia com Args["text"] = conteúdo corrente. Nunca preencher Props.Text a
+    /// partir da digitação — o servidor não é dono do cursor/seleção; ele só lê o
+    /// valor final quando a ação chega.
+    public SduiAction? OnChange { get; init; }
 
     // ── Semântica transversal (Onda 1: fundacionais do schema) ───────────────────
 

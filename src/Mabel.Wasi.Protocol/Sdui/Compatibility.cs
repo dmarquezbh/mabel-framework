@@ -47,8 +47,11 @@ public static class SduiSchema
 {
     /// Versão corrente do schema SDUI emitida por este assembly.
     /// v1 = Kanban Kanban (13 tipos). v2 = a11y, responsivo, List virtualizada,
-    /// navegação e degradação graciosa (esta Onda 1).
-    public const int CurrentVersion = 2;
+    /// navegação e degradação graciosa (Onda 1). v3 = TextField (Onda 2) — nós
+    /// existentes emitidos por um servidor v3 continuam decodificáveis por hosts
+    /// v2 (Fallback aplica só ao nó TextField em si, quando MinSchemaVersion=3
+    /// estiver marcado nele).
+    public const int CurrentVersion = 3;
 }
 
 /// <summary>Utilitários de reconhecimento de nó e negociação de versão.</summary>
@@ -60,7 +63,7 @@ public static class SduiCompatibility
     /// não quebra (o valor bruto é preservado), mas o host deve aplicar Fallback.
     /// </summary>
     public static bool IsKnown(this SduiNodeType type) =>
-        type is >= SduiNodeType.Screen and <= SduiNodeType.NavStack;
+        type is >= SduiNodeType.Screen and <= SduiNodeType.TextField;
 
     /// <summary>
     /// Decide como o host deve tratar <paramref name="node"/> dada a sua própria

@@ -9,7 +9,7 @@ import UIKit
 // Espelha Mabel.Wasi.Protocol/Sdui/*.cs.
 // =============================================================================
 
-let kHostSchemaVersion = 2
+let kHostSchemaVersion = 3
 
 // MARK: - Modelo (Decodable, espelha o schema C#; byte-enums como raw UInt8)
 
@@ -17,6 +17,7 @@ public enum SduiNodeType: UInt8 {
     case screen = 1, vstack = 2, hstack = 3, scrollView = 4, list = 5
     case card = 6, text = 7, button = 8, image = 9, badge = 10
     case progressBar = 11, divider = 12, spacer = 13, navStack = 14
+    case textField = 15
 }
 
 public struct SduiEdges: Decodable {
@@ -89,6 +90,8 @@ public struct SduiProps: Decodable {
     public var wrap: UInt8?
     public var safeArea: UInt8?      // SduiSafeArea flags
     public var data: [String: String]?
+    // TextField
+    public var placeholder: String?
 
     /// Merge RASO: campos setados em `o` vencem; os demais herdam de self.
     func merged(over o: SduiProps) -> SduiProps {
@@ -120,6 +123,7 @@ public struct SduiProps: Decodable {
         if let v = o.flexBasis { r.flexBasis = v }
         if let v = o.wrap { r.wrap = v }
         if let v = o.safeArea { r.safeArea = v }
+        if let v = o.placeholder { r.placeholder = v }
         return r
     }
 }
@@ -162,13 +166,15 @@ public struct SduiNode: Decodable {
     public let list: SduiListData?
     public let nav: SduiNav?
     public let bind: [String: String]?
+    /// Ação de mudança de texto (TextField). Ver doc em Mabel.Wasi.Protocol/Sdui/Descriptor.cs.
+    public let onChange: SduiAction?
 
     /// Tipo mapeado, ou nil se o host não conhece o valor (schema futuro).
     public var type: SduiNodeType? { SduiNodeType(rawValue: typeRaw) }
 
     enum CodingKeys: String, CodingKey {
         case id, type, props, children, onTap, a11y, fallback
-        case minSchemaVersion, responsive, list, nav, bind
+        case minSchemaVersion, responsive, list, nav, bind, onChange
     }
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -184,6 +190,7 @@ public struct SduiNode: Decodable {
         list = try c.decodeIfPresent(SduiListData.self, forKey: .list)
         nav = try c.decodeIfPresent(SduiNav.self, forKey: .nav)
         bind = try c.decodeIfPresent([String: String].self, forKey: .bind)
+        onChange = try c.decodeIfPresent(SduiAction.self, forKey: .onChange)
     }
 }
 
@@ -247,6 +254,40 @@ final class MabelCardControl: UIControl {
             UIView.animate(withDuration: 0.12) { self.alpha = 1 }
         }
         handler?(action, node)
+    }
+}
+
+/// Campo de texto nativo (TextField). O host é dono do texto corrente — o
+/// servidor nunca o recebe de volta via Props, só via ação (onChange/onTap
+/// com Args["text"] mesclado). Ver doc em Mabel.Wasi.Protocol/Sdui/Descriptor.cs.
+final class MabelTextFieldControl: UITextField, UITextFieldDelegate {
+    var node: SduiNode?
+    var handler: ((SduiAction, SduiNode) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        delegate = self
+        addTarget(self, action: #selector(changed), for: .editingChanged)
+    }
+    required init?(coder: NSCoder) { super.init(coder: coder); fatalError() }
+
+    private func comTexto(_ base: SduiAction?) -> SduiAction? {
+        guard let base else { return nil }
+        var args = base.args ?? [:]
+        args["text"] = text ?? ""
+        return SduiAction(name: base.name, args: args, navigate: base.navigate)
+    }
+
+    @objc private func changed() {
+        guard let node, let action = comTexto(node.onChange) else { return }
+        handler?(action, node)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        guard let node, let action = comTexto(node.onTap) else { return true }
+        handler?(action, node)
+        textField.resignFirstResponder()
+        return true
     }
 }
 
@@ -326,6 +367,7 @@ public final class MabelViewBuilder {
             case .divider:     view = buildDivider(node, props)
             case .spacer:      view = UIView()
             case .navStack:    view = buildNavStack(node, props)
+            case .textField:   view = buildTextField(node, props)
             }
         }
         applyBox(props, to: view)
@@ -582,6 +624,20 @@ public final class MabelViewBuilder {
             self.handleAction(action, node)
         }, for: .touchUpInside)
         return button
+    }
+
+    private func buildTextField(_ node: SduiNode, _ props: SduiProps?) -> UIView {
+        let field = MabelTextFieldControl()
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.node = node
+        field.handler = { [weak self] a, n in self?.handleAction(a, n) }
+        field.text = props?.text
+        field.placeholder = props?.placeholder
+        field.font = sduiFont(size: props?.fontSize, weight: props?.weight)
+        if let c = props?.color { field.textColor = sduiColor(c) }
+        field.returnKeyType = .send
+        field.borderStyle = .roundedRect
+        return field
     }
 
     private func buildImage(_ node: SduiNode, _ props: SduiProps?) -> UIView {

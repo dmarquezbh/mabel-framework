@@ -18,7 +18,7 @@ import org.json.JSONObject
 // =============================================================================
 
 /** Versao de schema que este host conhece. Nos com minSchemaVersion > isso caem no Fallback. */
-const val HOST_SCHEMA_VERSION = 2
+const val HOST_SCHEMA_VERSION = 3
 
 /**
  * Tipos de no suportados. Valores byte iguais em todas as plataformas.
@@ -28,7 +28,7 @@ const val HOST_SCHEMA_VERSION = 2
 enum class SduiNodeType(val raw: Int) {
     Screen(1), VStack(2), HStack(3), ScrollView(4), List(5),
     Card(6), Text(7), Button(8), Image(9), Badge(10),
-    ProgressBar(11), Divider(12), Spacer(13), NavStack(14);
+    ProgressBar(11), Divider(12), Spacer(13), NavStack(14), TextField(15);
 
     companion object {
         /** null (nao estoura) para valores desconhecidos — degradacao graciosa. */
@@ -106,6 +106,8 @@ data class SduiProps(
     val flexGrow: Float? = null,
     val safeArea: Int? = null,
     val data: Map<String, String> = emptyMap(),
+    // TextField
+    val placeholder: String? = null,
 ) {
     /** Merge raso: campos setados em [o] vencem; os demais herdam de this. */
     fun mergedOver(o: SduiProps): SduiProps = SduiProps(
@@ -133,6 +135,7 @@ data class SduiProps(
         flexGrow = o.flexGrow ?: flexGrow,
         safeArea = o.safeArea ?: safeArea,
         data = if (o.data.isNotEmpty()) o.data else data,
+        placeholder = o.placeholder ?: placeholder,
     )
 }
 
@@ -176,6 +179,8 @@ data class SduiNode(
     val list: SduiListData? = null,
     val nav: SduiNav? = null,
     val bind: Map<String, String> = emptyMap(),
+    /** Acao de mudanca de texto (TextField). Ver Mabel.Wasi.Protocol/Sdui/Descriptor.cs. */
+    val onChange: SduiAction? = null,
 ) {
     /** Tipo mapeado, ou null se o host nao conhece o valor. */
     val type: SduiNodeType? get() = SduiNodeType.fromOrNull(typeRaw)
@@ -219,6 +224,7 @@ object SduiParser {
             list = o.optJSONObject("list")?.let { listData(it) },
             nav = o.optJSONObject("nav")?.let { nav(it) },
             bind = o.optJSONObject("bind")?.toStringMap() ?: emptyMap(),
+            onChange = o.optJSONObject("onChange")?.let { action(it) },
         )
     }
 
@@ -247,6 +253,7 @@ object SduiParser {
         flexGrow = o.optFloatOrNull("flexGrow"),
         safeArea = o.optIntOrNull("safeArea"),
         data = o.optJSONObject("data")?.toStringMap() ?: emptyMap(),
+        placeholder = o.optStringOrNull("placeholder"),
     )
 
     private fun edges(it: JSONObject) = SduiEdges(
