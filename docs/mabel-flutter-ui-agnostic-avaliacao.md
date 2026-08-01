@@ -1,5 +1,10 @@
 # Mabel UI-agnostic + spike Flutter embutido — avaliação (2026-08-01)
 
+> **Continuação:** este spike foi retomado em `docs/mabel-arquitetura-v2-ui-agnostic.md`
+> (SDK do Flutter já instalado, spike funcional avançado + HMR/OTA consolidados no
+> mesmo roadmap). Este documento permanece como registro histórico do estado
+> "SDK ausente" — leia o de v2 para o estado atual.
+
 - **Pedido:** Daniel (Tech Lead), verbal — avaliar o Mabel ficar "UI agnostic" e permitir
   Flutter como shell alternativo; validar com um spike real chamando uma view Flutter
   a partir do app nativo (Rui Native), rodando no device físico **test-device-1**.
