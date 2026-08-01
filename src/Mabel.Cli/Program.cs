@@ -171,6 +171,46 @@ int RunDeploy(string[] args)
     Ansi.Header("mabel deploy");
     Ansi.Info($"Project:  {Path.GetFullPath(projectPath)}");
     Ansi.Info($"Platform: {single.Label()}");
+
+    if (single == Platform.Ios)
+    {
+        var buildTool = GetArg(args, "--build-tool", "-t");
+        if (buildTool is not null && buildTool.ToLowerInvariant() is not ("xtool" or "xcode"))
+        {
+            Ansi.Error($"--build-tool invalido: '{buildTool}'. Use 'xtool' ou 'xcode'.");
+            return 1;
+        }
+
+        // Auto: num Mac de verdade com Xcode.app, prefere o fluxo nativo
+        // (xcodebuild + xcrun devicectl) sobre o xtool, que existe pra permitir
+        // dev iOS sem Mac (Linux/WSL) — la xcodebuild simplesmente nao existe.
+        var useXcode = buildTool?.ToLowerInvariant() switch
+        {
+            "xcode" => true,
+            "xtool" => false,
+            _ => new XcodeEnvironment(shell).IsNativeXcodeMac(),
+        };
+
+        if (useXcode)
+        {
+            Ansi.Info("Build tool: Xcode nativo (xcodebuild + xcrun devicectl)");
+            Console.WriteLine();
+
+            var deviceUdid = GetArg(args, "--device", "-d");
+            var xcodeDeployer = new XcodeNativeDeploy(shell, fs);
+            var xcodeResult = xcodeDeployer.Execute(projectPath, deviceUdid);
+
+            if (xcodeResult.Success)
+                Ansi.Success("Deploy complete.");
+            else
+                Ansi.Error(xcodeResult.Error ?? "Deploy failed.");
+
+            return xcodeResult.Success ? 0 : 1;
+        }
+
+        Ansi.Info("Build tool: xtool (xtool dev)");
+    }
+
     Console.WriteLine();
 
     var deployer = new DeployToDevice(shell, fs);
@@ -361,9 +401,11 @@ int PrintUsage()
     Console.WriteLine($"    {"version",-12}Show version");
     Console.WriteLine();
     Console.WriteLine("  Options:");
-    Console.WriteLine("    --platform, -p   Target platform (ios, android, desktop, all)");
-    Console.WriteLine("    --bundle-id, -b  Bundle ID for create (default: com.example.<name>)");
-    Console.WriteLine("    --uninstall      Remove installed dependencies (setup only)");
+    Console.WriteLine("    --platform, -p    Target platform (ios, android, desktop, all)");
+    Console.WriteLine("    --bundle-id, -b   Bundle ID for create (default: com.example.<name>)");
+    Console.WriteLine("    --build-tool, -t  iOS deploy build tool: xtool | xcode (default: auto-detect)");
+    Console.WriteLine("    --device, -d      iOS deploy target device UDID (xcode build-tool only; default: first found)");
+    Console.WriteLine("    --uninstall       Remove installed dependencies (setup only)");
     Console.WriteLine();
     return 0;
 }

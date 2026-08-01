@@ -26,6 +26,17 @@ public sealed class ListDevices
 
     private IEnumerable<DeviceInfo> ListIos()
     {
+        // Num Mac com Xcode.app, `xcrun devicectl` (Xcode 15+) e a fonte mais
+        // moderna e confiavel — substitui idevice_id/libimobiledevice, que e o
+        // caminho usado no Linux/WSL. Aditivo: so entra em jogo quando
+        // devicectl de fato lista algo; senao cai no fluxo idevice_id de sempre.
+        var viaDevicectl = DevicectlDeviceLister.List(_shell);
+        if (viaDevicectl.Count > 0)
+        {
+            foreach (var d in viaDevicectl) yield return d;
+            yield break;
+        }
+
         if (!_shell.CommandExists("idevice_id")) yield break;
         var r = _shell.Run("idevice_id -l");
         if (!r.Success || string.IsNullOrWhiteSpace(r.Output)) yield break;
