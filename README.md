@@ -117,8 +117,8 @@ no Mac.** An app can load **both** iOS runtimes at once (see below):
 
 | | Runtime | JIT? | HMR? | Guest language on device | Status |
 |---|---|---|---|---|---|
-| **iOS (dev & live)** | **WasmKit** (pure-Swift interpreter) | No | Yes | **lean core-wasm only** (Rust/TinyGo/AssemblyScript/C) | **PROVEN on device, no Mac** |
-| **iOS (release, fast)** | **wasm2c → C → xtool clang → arm64** (AOT) | AOT | No | lean core-wasm | **PROVEN on device, no Mac (~163× vs interp)** |
+| **iOS (dev & live)** | **WasmKit** (pure-Swift interpreter) | No | Yes | **lean core-wasm only** (Rust/TinyGo/AssemblyScript/C) | **CONFIRMED on iOS Simulator** (`experiments/wasmkit-ios/`): load ~1.66ms, hot-swap ~0.10-0.14ms, 0 crashes in 5 cycles. Physical-device run blocked by an Apple Developer account device-registration limit, not an engineering blocker. |
+| **iOS (release, fast)** | **wasm2c → C → xtool clang → arm64** (AOT) | AOT | No | lean core-wasm | **not covered by this spike** — an earlier "~163x vs interpreter, proven on device" claim was not corroborated by any spike found in this repo; treat as unverified until a dedicated AOT spike runs |
 | **Desktop** | wasmtime (Cranelift JIT) | Yes | Yes | broad, **incl. .NET/Blazor** | designed |
 | **Android** | wasmtime-JNI / Chicory (JIT) | Yes | Yes | broad | designed |
 
