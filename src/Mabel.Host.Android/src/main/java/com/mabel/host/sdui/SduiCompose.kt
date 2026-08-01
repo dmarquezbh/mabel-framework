@@ -27,11 +27,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -227,7 +234,47 @@ private fun RenderNode(
             m.size((p?.width ?: 24f).dp, (p?.height ?: 24f).dp)
                 .background(colorOf(p?.background) ?: Color(0x11000000))
         )
+
+        SduiNodeType.TextField -> RenderTextField(node, p, onAction, m)
     }
+}
+
+// ── TextField (Onda 2 do schema, v3) ──────────────────────────────────────────
+
+/**
+ * Campo de texto editavel nativo (OutlinedTextField). O host e dono do estado
+ * de edicao ([remember]/mutableStateOf) — o servidor nunca preenche Props.Text
+ * a partir da digitacao. A cada mudanca, dispara [SduiNode.onChange] com
+ * Args["text"] mesclado por cima do que o no ja declarava; o Enter/Done
+ * dispara [SduiNode.onTap] (reaproveitado como "submit") com o mesmo Args
+ * aumentado. Ver doc em Mabel.Wasi.Protocol/Sdui/Descriptor.cs.
+ */
+@Composable
+private fun RenderTextField(
+    node: SduiNode,
+    p: SduiProps?,
+    onAction: (SduiAction, SduiNode) -> Unit,
+    m: Modifier,
+) {
+    var texto by remember(node.id) { mutableStateOf(p?.text ?: "") }
+
+    fun comTexto(base: SduiAction?): SduiAction? =
+        base?.copy(args = base.args + ("text" to texto))
+
+    OutlinedTextField(
+        value = texto,
+        onValueChange = { novo ->
+            texto = novo
+            comTexto(node.onChange)?.let { onAction(it, node) }
+        },
+        placeholder = { Text(p?.placeholder ?: "") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+        keyboardActions = KeyboardActions(onSend = {
+            comTexto(node.onTap)?.let { onAction(it, node) }
+        }),
+        modifier = m,
+    )
 }
 
 // ── NavStack (pilha de telas nativa) ─────────────────────────────────────────
