@@ -36,11 +36,14 @@ WASM-on-device provou:
 
 - **AOT (baked):** compilar o wasm ahead-of-time e assá-lo no binário (no iOS,
   wasm2c→C→clang do xtool→arm64) dá **velocidade nativa**, mas o mini-app fica **preso no
-  build** → **NÃO é OTA** (mudar exige rebuild + loja). **PROVADO no device sem Mac** (spike
-  v2), **~163×** mais rápido que o interpretador num bench trivial.
-- **Interpretador (WasmKit):** **PROVADO** rodando no iPhone via xtool **sem Mac**
-  (interpretador puro-Swift, sem JIT). Carrega módulos **em runtime** → **habilita OTA**
-  de mini-apps (nível 2). Custo: mais lento que AOT/JIT.
+  build** → **NÃO é OTA** (mudar exige rebuild + loja). ⚠️ **Não coberto por nenhum spike
+  encontrado neste repo** — a alegação anterior "provado no device, ~163× mais rápido" não
+  tem spike correspondente; tratar como não verificada até um spike de AOT dedicado rodar.
+- **Interpretador (WasmKit):** **CONFIRMADO no iOS Simulator** (`experiments/wasmkit-ios/`,
+  2026-08-01): carrega e faz hot-swap real de módulo em runtime (load ~1,66ms, swap
+  ~0,10-0,14ms, 0 crashes em 5 ciclos). Validação em device físico ficou bloqueada por
+  limite de conta Apple Developer (não é bloqueio de engenharia). Carrega módulos **em
+  runtime** → **habilita OTA** de mini-apps (nível 2). Custo: mais lento que AOT/JIT.
   > Achado do spike a registrar: **.NET→wasm não roda no WasmKit** (o .NET emite
   > WASI-preview2 Component + Mono ~3,34 MB; WasmKit é core-module + preview1 → rejeita;
   > core Rust ~55 B roda). Logo o **mini-app live-on-iOS é um lean core-wasm** (Rust/TinyGo/
