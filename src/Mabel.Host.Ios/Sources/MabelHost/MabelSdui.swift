@@ -830,15 +830,16 @@ extension SduiNode {
         self = SduiNode(id: n.id, typeRaw: n.typeRaw, props: n.props, children: n.children,
                         onTap: onTap, a11y: n.a11y, fallback: n.fallback,
                         minSchemaVersion: n.minSchemaVersion, responsive: n.responsive,
-                        list: n.list, nav: n.nav, bind: n.bind)
+                        list: n.list, nav: n.nav, bind: n.bind, onChange: n.onChange)
     }
     // Init memberwise explícito (o custom init(from:) some com o sintetizado).
     init(id: String, typeRaw: UInt8, props: SduiProps?, children: [SduiNode]?,
          onTap: SduiAction?, a11y: SduiA11y?, fallback: UInt8?, minSchemaVersion: Int?,
-         responsive: [SduiResponsiveOverride]?, list: SduiListData?, nav: SduiNav?, bind: [String: String]?) {
+         responsive: [SduiResponsiveOverride]?, list: SduiListData?, nav: SduiNav?, bind: [String: String]?,
+         onChange: SduiAction? = nil) {
         self.id = id; self.typeRaw = typeRaw; self.props = props; self.children = children
         self.onTap = onTap; self.a11y = a11y; self.fallback = fallback
         self.minSchemaVersion = minSchemaVersion; self.responsive = responsive
-        self.list = list; self.nav = nav; self.bind = bind
+        self.list = list; self.nav = nav; self.bind = bind; self.onChange = onChange
     }
 }
