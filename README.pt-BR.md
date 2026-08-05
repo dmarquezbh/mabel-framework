@@ -113,19 +113,23 @@ buildado e instalado assim.
 
 ### Runtimes: o que roda de fato no device
 
-O iOS proíbe JIT, e um spike (task #17, v2) provou exatamente o que roda onde — **no device,
-sem Mac.** Um app pode carregar **os dois** runtimes iOS ao mesmo tempo (ver abaixo):
+O iOS proíbe JIT. Um spike (task #17, v2) checou o que de fato roda onde. Um app pode carregar
+**os dois** runtimes iOS ao mesmo tempo (ver abaixo), mas só um dos dois tem spike por trás
+até agora:
 
 | | Runtime | JIT? | HMR? | Linguagem do guest no device | Status |
 |---|---|---|---|---|---|
-| **iOS (dev & live)** | **WasmKit** (interpretador puro-Swift) | Não | Sim | **só lean core-wasm** (Rust/TinyGo/AssemblyScript/C) | **PROVADO no device, sem Mac** |
-| **iOS (release, rápido)** | **wasm2c → C → clang do xtool → arm64** (AOT) | AOT | Não | lean core-wasm | **PROVADO no device, sem Mac (~163× vs interp)** |
+| **iOS (dev & live)** | **WasmKit** (interpretador puro-Swift) | Não | Sim | **só lean core-wasm** (Rust/TinyGo/AssemblyScript/C) | **CONFIRMADO no iOS Simulator** (`experiments/wasmkit-ios/`): load ~1,66ms, hot-swap ~0,10-0,14ms, 0 crashes em 5 ciclos. Validação em device físico ficou bloqueada por limite de conta Apple Developer, não é bloqueio de engenharia. |
+| **iOS (release, rápido)** | **wasm2c → C → clang do xtool → arm64** (AOT) | AOT | Não | lean core-wasm | **não coberto por este spike** — uma alegação anterior "~163× vs interpretador, provado no device" não foi corroborada por nenhum spike encontrado neste repo; tratar como não verificada até um spike de AOT dedicado rodar |
 | **Desktop** | wasmtime (Cranelift JIT) | Sim | Sim | amplo, **incl. .NET/Blazor** | desenhado |
 | **Android** | wasmtime-JNI / Chicory (JIT) | Sim | Sim | amplo | desenhado |
 
-Os dois caminhos iOS rodaram **lado a lado no mesmo app no iPhone test-device-1**, cross-compilados e
-instalados a partir do Linux sem Mac. O caminho AOT é **~163×** mais rápido que o
-interpretador num bench trivial (compute pesado fica ~10–50×).
+**Correção:** uma versão anterior desta seção alegava que os dois runtimes rodaram lado a lado
+no mesmo app, num iPhone físico, com o caminho AOT **~163×** mais rápido que o interpretador.
+Só a linha do interpretador WasmKit acima tem um spike de verdade neste repo
+(`experiments/wasmkit-ios/`), e ele rodou no **iOS Simulator** — não num device físico
+(bloqueado por limite de conta Apple Developer, não por limitação de engenharia). Não existe
+spike de AOT neste repo; tratar o número ~163× como não verificado até um spike dedicado rodar.
 
 > **Achado importante e honesto (spike):** **`.NET → wasm` não roda no WasmKit.** O .NET
 > emite um Component WASI-Preview-2 + Mono (~3,34 MB); o WasmKit é um runtime core-module +
@@ -401,7 +405,7 @@ compartilhados: contrato **DESENHADO (v1 commitado)**. Peças por plataforma:
 | Camada | iOS | Android | Windows | Linux | macOS | Web |
 |---|---|---|---|---|---|---|
 | Host renderiza descritor → controles nativos | **PROVADO**¹ | DESENHADO | DESENHADO | DESENHADO | A-CONFIRMAR² | DESENHADO (→DOM) |
-| Runtime WASM (guest live no device) | **PROVADO** (WasmKit interp + wasm2c AOT)³ | DESENHADO (JIT) | DESENHADO (wasmtime) | DESENHADO (wasmtime) | A-CONFIRMAR² | DESENHADO (nativo do browser) |
+| Runtime WASM (guest live no device) | **PROVADO** (só interp. WasmKit)³ | DESENHADO (JIT) | DESENHADO (wasmtime) | DESENHADO (wasmtime) | A-CONFIRMAR² | DESENHADO (nativo do browser) |
 | Capabilities (ABI WIT) | DESENHADO | DESENHADO | DESENHADO | DESENHADO | A-CONFIRMAR² | DESENHADO (mockado) |
 | Build sem Mac | **PROVADO** (xtool) | N/A | N/A | N/A | A-CONFIRMAR² | N/A |
 | HMR (hot reload) | DESENHADO (swap WasmKit) | DESENHADO | DESENHADO (loop primário) | DESENHADO (loop primário) | A-CONFIRMAR² | DESENHADO (broadcast) |
@@ -412,10 +416,13 @@ logando `[Kanban] open-card card:X` em colunas diferentes (a prova do Kanban, co
 ² **macOS-desktop = a confirmar, não bloqueado:** build sem-Mac é plausível via
 cross-compile Swift/AppKit + `apple-codesign`/`rcodesign` + API de notarização, mas não é
 caminho pavimentado do xtool ainda → precisa de spike (task #21).
-³ **os dois provados no device, sem Mac:** interpretador WasmKit (dev/OTA) **e** wasm2c→arm64
-AOT (release, ~163× mais rápido) rodaram lado a lado. **só lean core-wasm** (Rust/TinyGo/
-AssemblyScript/C); **.NET-wasm não é suportado no WasmKit** — .NET fica em autoria, geração de
-descritor em build-time, e desktop/Android. Web roda o guest no engine WASM nativo do browser.
+³ **interpretador WasmKit confirmado no iOS Simulator, sem Mac** (`experiments/wasmkit-ios/`);
+validação em device físico ficou bloqueada por limite de conta Apple Developer, não por
+limitação de engenharia. O caminho **wasm2c→arm64 AOT não tem spike neste repo** — uma
+alegação anterior "~163× mais rápido, provado no device" não foi corroborada e é tratada como
+não verificada. O runtime confirmado roda **só lean core-wasm** (Rust/TinyGo/AssemblyScript/C);
+**.NET-wasm não é suportado no WasmKit** — .NET fica em autoria, geração de descritor em
+build-time, e desktop/Android. Web roda o guest no engine WASM nativo do browser.
 
 ---
 
@@ -491,11 +498,14 @@ boards, dashboards).
 - IPA iOS **buildado e instalado a partir do Linux sem Mac** via xtool (hello-world).
 - **Descritor SDUI → UIKit nativo num iPhone físico** (ADR 0001): card-flash + scroll nativo
   + 5 taps logando `[Kanban] open-card card:X` em colunas diferentes (confirmado pelo Daniel).
-- **Os dois runtimes WASM do iOS no device** (spike #17 v2): **WasmKit** interpretador
-  (puro-Swift, arm64, ~4.6 MB; pin `swift-system` 1.5.0) **e** **wasm2c→arm64 AOT** via clang
-  do xtool, lado a lado, **~163×** AOT-vs-interp num bench trivial. Roda **lean core-wasm**
-  (core Rust ~55 B); **.NET-wasm rejeitado** (Preview-2/Mono ~3,34 MB vs core-module/Preview-1;
-  `NativeAOT-LLVM` é o fix mas bloqueado no WSL → fase própria).
+- **Interpretador WasmKit no iOS Simulator** (spike #17 v2, `experiments/wasmkit-ios/`):
+  puro-Swift, arm64, ~4,6 MB; pin `swift-system` 1.5.0. Load ~1,66ms, hot-swap ~0,10-0,14ms,
+  0 crashes em 5 ciclos. Validação em device físico ficou bloqueada por limite de conta Apple
+  Developer, não por limitação de engenharia. Roda **lean core-wasm** (core Rust ~55 B);
+  **.NET-wasm rejeitado** (Preview-2/Mono ~3,34 MB vs core-module/Preview-1; `NativeAOT-LLVM`
+  é o fix mas bloqueado no WSL → fase própria). **wasm2c→arm64 AOT não tem spike neste repo**
+  — uma alegação anterior "~163× mais rápido, provado no device" não foi corroborada; tratar
+  como não verificada até um spike de AOT dedicado rodar.
 - Render de display-list de pixels no iOS (Core Graphics) — o spike que motivou o pivot pro
   SDUI. Preservado pra referência, **superseded** pelo SDUI.
 
@@ -512,7 +522,12 @@ boards, dashboards).
 [0005 Super-app](docs/adr/0005-super-app.md) ·
 [0006 OTA](docs/adr/0006-ota.md) ·
 [0007 Autoria poliglota](docs/adr/0007-autoria-poliglota.md) ·
-[0008 Debugging](docs/adr/0008-debugging.md)
+[0008 Debugging](docs/adr/0008-debugging.md) ·
+[0009 Acessibilidade SDUI](docs/adr/0009-sdui-acessibilidade-no-descritor.md) ·
+[0010 Layout responsivo SDUI](docs/adr/0010-sdui-layout-responsivo-adaptativo.md) ·
+[0011 Listas virtualizadas SDUI](docs/adr/0011-sdui-listas-virtualizadas.md) ·
+[0012 Navegação/routing SDUI](docs/adr/0012-sdui-navegacao-routing.md) ·
+[0013 Distribuição dos hosts como pacote](docs/adr/0013-distribuicao-hosts-como-pacote-binario.md)
 
 > Nota: os ADRs 0001/0002 vivem nas suas próprias branches (`feat/sdui-descriptor`,
 > `feat/mabel-capabilities-abi`); 0003–0007 e este README estão em
@@ -557,11 +572,15 @@ re-render é diffado — não é um bridge serializado por frame. O guest emite 
 semântico, não um fluxo tagarela de mutações de UI.
 
 **Cadê o WASM/WASI no mobile?**
-É o **motor da lógica no device** — interpretador WasmKit no dev, wasm2c→nativo no release,
-os dois provados no iPhone sem Mac.
+É o **motor da lógica no device** — interpretador WasmKit, confirmado no iOS Simulator sem
+Mac. O caminho de release planejado é wasm2c→nativo (AOT), mas esse caminho ainda não tem
+spike neste repo — ver a tabela de runtimes acima.
 
 **Roda WASM sem lentidão no iOS?**
-Sim: dev = interpretador (ok pra editar), release = wasm2c→nativo (~163× mais rápido, provado).
+O interpretador está confirmado funcionando (ok pra editar). Um caminho de release mais
+rápido (wasm2c→nativo, AOT) está planejado mas não verificado — uma alegação anterior
+"~163× mais rápido, provado" não tinha spike correspondente e não deve ser usada como
+referência até um spike de AOT dedicado rodar.
 
 **Posso usar Go/Rust em vez de .NET?**
 Sim — o guest é core-WASM poliglota (um core Rust é ~55 B). Ressalva: .NET/Mono-wasm **não**
