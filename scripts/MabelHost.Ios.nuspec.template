@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Template do .nuspec do MabelHost.Ios — processado por scripts/pack-xcframework.sh
+  (substituição literal via sed, não tokens $x$ do MSBuild — mantém o pack
+  independente de particularidades de NuspecProperties/csproj).
+
+  Este NÃO é um pacote .NET "de verdade": não há assembly gerenciado, só o
+  MabelHost.xcframework (binário Swift/iOS) zipado como conteúdo. O NuGet é
+  usado aqui só como mecanismo de armazenamento/versionamento — reaproveitando
+  o feed privado RuiBarbot que o Opera já autentica — não como formato nativo
+  do conteúdo. Ver ADR 0013 (docs/adr/) e PACKAGING.md (src/Mabel.Host.Ios/).
+-->
+<package>
+  <metadata>
+    <id>Pjus.RuiBarbot.MabelHost.Ios</id>
+    <version>{{VERSION}}</version>
+    <description>
+      MabelHost.xcframework (device iOS + iOS Simulator) — host nativo Swift/SwiftUI
+      do Mabel Framework para renderização de SDUI em apps iOS. Distribuído como
+      conteúdo binário zipado; não é um pacote .NET gerenciado. Fonte:
+      https://github.com/dmarquezbh/mabel-framework (src/Mabel.Host.Ios).
+    </description>
+    <authors>Daniel Marques</authors>
+    <projectUrl>https://github.com/dmarquezbh/mabel-framework</projectUrl>
+    <repository type="git" url="https://github.com/dmarquezbh/mabel-framework" />
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+  </metadata>
+  <files>
+    <file src="MabelHost.xcframework.zip" target="content\ios\MabelHost.xcframework.zip" />
+  </files>
+</package>

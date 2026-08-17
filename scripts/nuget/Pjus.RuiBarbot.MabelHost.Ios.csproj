@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Projeto "vazio" — existe só para dar ao `dotnet pack` um alvo SDK-style
+    capaz de processar um .nuspec pronto (via <NuspecFile>). Não compila nada
+    de verdade (sem .cs), não produz assembly gerenciado, e não é referenciado
+    por nenhum outro projeto — é só o veículo de empacotamento do
+    MabelHost.xcframework (binário Swift/iOS) como conteúdo de um pacote
+    NuGet. Ver scripts/pack-xcframework.sh (gera o .nuspec concreto e chama
+    `dotnet pack` sobre este .csproj) e docs/adr/0013 (decisão de distribuir
+    hosts nativos como pacote binário via NuGet/Maven).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <NoWarn>$(NoWarn);NU5128;NU5127</NoWarn>
+    <!-- Preenchido em runtime por scripts/pack-xcframework.sh via -p:NuspecFile= -->
+  </PropertyGroup>
+
+</Project>

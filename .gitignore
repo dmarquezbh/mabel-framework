@@ -59,3 +59,7 @@ tools/device-manager/.build/
 # xtool build output
 **/xtool/
 **/.build/
+
+# Saída de scripts/pack-xcframework.sh (archives, .xcframework montado, .nupkg) —
+# ver src/Mabel.Host.Ios/PACKAGING.md
+build/
